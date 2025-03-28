@@ -49,111 +49,86 @@ const BingoGrid = ({
   // Debug log to check grid dimensions
   console.log("Grid dimensions in BingoGrid:", grid.length, "x", grid[0]?.length);
   
-  // Ensure we have a complete grid (should be 5x5)
+  // Ensure we have a complete grid with the correct dimensions
   const ensureCompleteGrid = (inputGrid) => {
-    // Expected size (5x5)
-    const expectedSize = 5;
+    // Get the actual grid size from the input grid
+    const size = inputGrid.length;
     
-    // If grid is already correct size, return it
-    if (inputGrid.length === expectedSize && 
-        inputGrid.every(row => row.length === expectedSize)) {
+    // If grid is already square and complete, return it
+    if (inputGrid.length === size && 
+        inputGrid.every(row => row.length === size)) {
       return inputGrid;
     }
     
     // Create a new grid with correct dimensions
     const completeGrid = [];
-    for (let i = 0; i < expectedSize; i++) {
+    for (let i = 0; i < size; i++) {
       const row = [];
-      for (let j = 0; j < expectedSize; j++) {
+      for (let j = 0; j < size; j++) {
         // Use existing value if available, otherwise generate a fallback
         if (inputGrid[i] && typeof inputGrid[i][j] === 'number') {
           row.push(inputGrid[i][j]);
         } else {
           // Generate a deterministic number based on position
-          row.push((i * expectedSize) + j + 1);
+          row.push((i * size) + j + 1);
         }
       }
       completeGrid.push(row);
     }
     
-    console.log("Created complete 5x5 grid:", completeGrid);
+    console.log(`Created complete ${size}x${size} grid:`, completeGrid);
     return completeGrid;
   };
 
   // Process grid data to ensure all cells have values and grid is complete
   const processedGrid = ensureCompleteGrid(grid);
-  
-  // Convert custom symbols string to array
-  const customSymbolsArray = customSymbols
-    ? customSymbols.split(',').map(s => s.trim())
-    : [];
 
-  // Function to get the symbol for a number
-  const getSymbol = (num) => {
-    if (num === undefined || num === null) {
-      return '?'; // Fallback for any missing values
-    }
-    if (symbols === 'numbers') return num;
-    if (symbols === 'emojis') return emojiMap[num] || num;
-    if (symbols === 'custom') {
-      // Use custom symbols if available, otherwise fallback to number
-      const idx = (num - 1) % customSymbolsArray.length;
-      return customSymbolsArray[idx] || num;
-    }
-    return num;
-  };
-
-  // Check if a cell is part of a winning line
-  const isInWinningLine = (rowIdx, colIdx) => {
-    if (!winningLines || winningLines.length === 0) return false;
-    
-    return winningLines.some(line => {
-      if (line.type === 'row' && line.index === rowIdx) return true;
-      if (line.type === 'col' && line.index === colIdx) return true;
-      if (line.type === 'diag' && line.index === 0 && rowIdx === colIdx) return true;
-      if (line.type === 'diag' && line.index === 1 && rowIdx + colIdx === processedGrid.length - 1) return true;
-      return false;
-    });
-  };
+  // Calculate cell size based on grid dimensions
+  const cellSize = `calc((100% - ${(grid.length - 1) * 0.5}rem) / ${grid.length})`;
 
   return (
     <div className="bg-white rounded-lg shadow-lg p-4">
       <div 
-        className="grid gap-2 mx-auto max-w-2xl"
-        style={{ gridTemplateColumns: `repeat(${processedGrid.length}, minmax(0, 1fr))` }}
+        className="grid gap-2" 
+        style={{ 
+          gridTemplateColumns: `repeat(${grid.length}, ${cellSize})`,
+          gridTemplateRows: `repeat(${grid.length}, ${cellSize})`
+        }}
       >
-        {processedGrid.map((row, rowIdx) => 
-          row.map((num, colIdx) => {
-            const isMarked = marked.has(num);
-            const inWinningLine = isInWinningLine(rowIdx, colIdx);
-            
+        {processedGrid.map((row, i) => 
+          row.map((number, j) => {
+            const isMarked = marked.has(number);
+            const isWinningCell = winningLines?.some(line => {
+              if (line.type === 'row' && line.index === i) return true;
+              if (line.type === 'col' && line.index === j) return true;
+              if (line.type === 'diag' && line.index === 0 && i === j) return true;
+              if (line.type === 'diag' && line.index === 1 && i === (grid.length - 1 - j)) return true;
+              return false;
+            });
+
             return (
-              <motion.div
-                key={`${rowIdx}-${colIdx}`}
-                whileHover={isMyTurn && !isMarked ? { scale: 1.05 } : {}}
-                whileTap={isMyTurn && !isMarked ? { scale: 0.95 } : {}}
-                animate={isMarked ? { 
-                  backgroundColor: inWinningLine ? 'var(--accent-color)' : 'var(--primary-color)', 
-                  color: '#ffffff',
-                  scale: [1, 1.1, 1] 
-                } : {}}
-                transition={{ duration: 0.3 }}
-                onClick={() => isMyTurn && !isMarked && num !== undefined && onMarkNumber(num)}
+              <button
+                key={`${i}-${j}`}
+                onClick={() => onMarkNumber(number)}
+                disabled={!isMyTurn || isMarked}
                 className={`
-                  grid-cell
-                  aspect-square
-                  flex items-center justify-center
-                  ${isMarked ? 'marked' : 'bg-gray-100 hover:bg-gray-200'}
-                  ${inWinningLine ? 'winning-line' : ''}
-                  ${isMyTurn && !isMarked && num !== undefined ? 'cursor-pointer' : 'cursor-default'}
-                  text-lg md:text-xl font-bold
-                  rounded-lg
-                  p-2 md:p-4
-                  transition-colors
+                  relative aspect-square flex items-center justify-center
+                  text-lg sm:text-xl font-semibold rounded-lg
+                  transition-all duration-200 ease-in-out
+                  ${isWinningCell ? 'bg-success-100 border-success-500' : 'bg-gray-50 border-gray-200'}
+                  ${isMarked ? 'border-2' : 'border'}
+                  ${isMyTurn && !isMarked ? 'hover:bg-primary-50 hover:border-primary-500 cursor-pointer' : 'cursor-not-allowed'}
+                  ${isMarked ? 'text-success-600' : 'text-gray-800'}
                 `}
+                style={{ fontSize: `calc(16px + (24 - 16) * ((100vw - 320px) / (1600 - 320)))` }}
               >
-                {getSymbol(num)}
-              </motion.div>
+                <span className={isMarked ? 'line-through' : ''}>{number}</span>
+                {isMarked && (
+                  <span className="absolute inset-0 flex items-center justify-center text-success-600 font-bold">
+                    {customSymbols?.[number] || symbols?.[number] || '✓'}
+                  </span>
+                )}
+              </button>
             );
           })
         )}

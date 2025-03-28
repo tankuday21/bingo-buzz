@@ -70,46 +70,33 @@ function generateUniqueGrid(size, playerIdentifier = '', usedNumbers = new Set()
 }
 
 /**
- * Generate a random Bingo grid of the specified size with guaranteed uniqueness
+ * Generate a grid of given size
  * @param {string} size - Grid size in format "5x5", "6x6", etc.
- * @param {string} playerIdentifier - Unique identifier for the player to ensure unique grid generation
- * @returns {Array<Array<number>>} 2D array representing the grid
+ * @param {string} seed - Seed for random number generation
+ * @returns {Array<Array<number>>} The generated grid
  */
-function generateGrid(size, playerIdentifier = '') {
-  // Parse the grid dimensions
+function generateGrid(size, seed) {
+  // Parse grid size
   const [rows, cols] = size.split('x').map(Number);
   const total = rows * cols;
   
-  // Create an array of numbers from 1 to total
+  // Create array of numbers from 1 to total
   const numbers = Array.from({ length: total }, (_, i) => i + 1);
   
-  // Use a combination of player identifier and current time for better randomness
-  const seed = playerIdentifier ? 
-    playerIdentifier.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) : 
-    Date.now();
+  // Shuffle numbers using seed
+  const shuffled = numbers.sort(() => {
+    const x = Math.sin(seed.length + numbers.length);
+    return x - Math.floor(x);
+  });
   
-  // Add more entropy to the seed
-  const enhancedSeed = seed + (Date.now() % 10000) + Math.floor(Math.random() * 1000);
-  
-  // Fisher-Yates shuffle with enhanced randomness
-  for (let i = numbers.length - 1; i > 0; i--) {
-    // Use multiple sources of randomness
-    const j = Math.floor(
-      (Math.sin(enhancedSeed + i) * 10000 + 
-       Math.random() * 1000 + 
-       Date.now() % 1000) % (i + 1)
-    );
-    [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
-  }
-  
-  // Convert to 2D array
+  // Create grid
   const grid = [];
   for (let i = 0; i < rows; i++) {
     const row = [];
     for (let j = 0; j < cols; j++) {
       const index = i * cols + j;
-      if (index < numbers.length) {
-        row.push(numbers[index]);
+      if (index < shuffled.length) {
+        row.push(shuffled[index]);
       }
     }
     grid.push(row);
@@ -317,27 +304,48 @@ function validateGrid(grid, usedGrids = new Set()) {
 function generateUniquePlayerGrid(size, playerIdentifier, usedGrids = new Set()) {
   const maxAttempts = 100; // Prevent infinite loops
   let attempts = 0;
-
+  
+  // Parse grid size
+  const [rows, cols] = size.split('x').map(Number);
+  const total = rows * cols;
+  
   while (attempts < maxAttempts) {
-    const { grid, usedNumbers } = generateUniqueGrid(size, playerIdentifier, new Set());
+    // Create array of numbers from 1 to total
+    const numbers = Array.from({ length: total }, (_, i) => i + 1);
     
-    if (validateGrid(grid, usedGrids)) {
-      // Convert grid to string and add to used grids
-      const gridString = grid.map(row => row.join(',')).join('|');
+    // Shuffle numbers
+    for (let i = numbers.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
+    }
+    
+    // Create grid
+    const grid = [];
+    for (let i = 0; i < rows; i++) {
+      const row = [];
+      for (let j = 0; j < cols; j++) {
+        const index = i * cols + j;
+        if (index < numbers.length) {
+          row.push(numbers[index]);
+        }
+      }
+      grid.push(row);
+    }
+    
+    // Check if grid is unique
+    const gridString = grid.map(row => row.join(',')).join('|');
+    if (!usedGrids.has(gridString)) {
       usedGrids.add(gridString);
       return grid;
     }
     
     attempts++;
   }
-
+  
   // If we couldn't generate a unique grid after max attempts,
   // generate a new grid with a different seed
   console.warn('Could not generate unique grid after max attempts, using fallback method');
-  const fallbackGrid = generateGrid(size, playerIdentifier + Date.now());
-  const gridString = fallbackGrid.map(row => row.join(',')).join('|');
-  usedGrids.add(gridString);
-  return fallbackGrid;
+  return generateGrid(size, playerIdentifier + Date.now());
 }
 
 module.exports = {

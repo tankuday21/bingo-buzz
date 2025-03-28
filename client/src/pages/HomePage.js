@@ -88,23 +88,7 @@ const HomePage = () => {
       
     } catch (error) {
       console.error('Error creating game:', error);
-      
-      // Detailed error logging
-      if (error.response) {
-        console.error('Server response error:', {
-          status: error.response.status,
-          data: error.response.data,
-          headers: error.response.headers
-        });
-        toast.error(`Failed to create game: ${error.response.data?.error || 'Server error'}`);
-      } else if (error.request) {
-        console.error('No response received:', error.request);
-        toast.error('Server not responding. Please check if the server is running.');
-      } else {
-        console.error('Request setup error:', error.message);
-        toast.error(`Error: ${error.message || 'Failed to create game. Please try again.'}`);
-      }
-      
+      toast.error(error.response?.data?.error || 'Failed to create game');
       setIsCreating(false);
     }
   };
@@ -149,112 +133,87 @@ const HomePage = () => {
   };
   
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-primary-100 to-accent-100 dark:from-gray-900 dark:to-gray-800">
       {/* Header */}
       <header className="bg-gradient-to-r from-primary-600 to-accent-600 p-4 text-white">
         <div className="container mx-auto flex justify-between items-center">
           <h1 className="text-3xl font-bold">Bingo Buzz</h1>
-          <div className="flex items-center space-x-4">
-            <a href="/leaderboard" className="hover:underline">Leaderboard</a>
-            <ThemeSwitcher />
-          </div>
+          <ThemeSwitcher />
         </div>
       </header>
       
       {/* Main content */}
-      <main className="flex-1 container mx-auto px-4 py-8 flex flex-col items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="text-center mb-8"
-        >
-          <h2 className="text-4xl font-bold mb-2">Welcome to Bingo Buzz!</h2>
-          <p className="text-xl">A real-time multiplayer Bingo game</p>
-        </motion.div>
-        
-        {/* Username input */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
-          className="w-full max-w-md mb-8"
-        >
-          <label htmlFor="username" className="block text-lg font-medium mb-2">Your Name</label>
-          <input
-            type="text"
-            id="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Enter your name"
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-            required
-          />
-        </motion.div>
-        
-        {/* Create Game section */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4, duration: 0.5 }}
-          className="w-full max-w-md p-6 bg-white rounded-lg shadow-lg mb-8"
-        >
-          <h3 className="text-2xl font-bold mb-4">Create New Game</h3>
-          
-          <div className="mb-4">
-            <label htmlFor="gridSize" className="block text-lg font-medium mb-2">Grid Size</label>
-            <select
-              id="gridSize"
-              value={gridSize}
-              onChange={(e) => setGridSize(e.target.value)}
-              className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+      <main className="flex-1 container mx-auto p-4 flex items-center justify-center">
+        <div className="w-full max-w-md">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8">
+            <h2 className="text-2xl font-bold mb-6 text-center dark:text-white">
+              Welcome to Bingo Buzz
+            </h2>
+
+            {/* Username input */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2 dark:text-gray-300">
+                Your Name
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => saveUsername(e.target.value)}
+                placeholder="Enter your name"
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              />
+            </div>
+
+            {/* Grid size selection */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2 dark:text-gray-300">
+                Grid Size
+              </label>
+              <select
+                value={gridSize}
+                onChange={(e) => setGridSize(e.target.value)}
+                className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              >
+                <option value="5x5">5x5</option>
+                <option value="6x6">6x6</option>
+                <option value="7x7">7x7</option>
+                <option value="8x8">8x8</option>
+              </select>
+            </div>
+
+            {/* Create game button */}
+            <button
+              onClick={handleCreateGame}
+              disabled={isCreating}
+              className="w-full bg-primary-600 text-white py-3 rounded-lg font-medium mb-4 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
             >
-              <option value="5x5">5x5</option>
-              <option value="6x6">6x6</option>
-              <option value="7x7">7x7</option>
-              <option value="8x8">8x8</option>
-            </select>
+              {isCreating ? 'Creating...' : 'Create New Game'}
+            </button>
+
+            {/* Join game section */}
+            <div className="text-center">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                Or join an existing game
+              </p>
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  value={roomCode}
+                  onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                  placeholder="Enter room code"
+                  className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+                <button
+                  onClick={handleJoinGame}
+                  disabled={isJoining || !roomCode}
+                  className="px-6 py-3 bg-accent-600 text-white rounded-lg font-medium hover:bg-accent-700 focus:outline-none focus:ring-2 focus:ring-accent-500 disabled:opacity-50"
+                >
+                  Join
+                </button>
+              </div>
+            </div>
           </div>
-          
-          <button
-            onClick={handleCreateGame}
-            disabled={isCreating}
-            className="w-full py-3 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
-          >
-            {isCreating ? 'Creating...' : 'Create Game'}
-          </button>
-        </motion.div>
-        
-        {/* Join Game section */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6, duration: 0.5 }}
-          className="w-full max-w-md p-6 bg-white rounded-lg shadow-lg"
-        >
-          <h3 className="text-2xl font-bold mb-4">Join Existing Game</h3>
-          
-          <div className="mb-4">
-            <label htmlFor="roomCode" className="block text-lg font-medium mb-2">Room Code</label>
-            <input
-              type="text"
-              id="roomCode"
-              value={roomCode}
-              onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-              placeholder="Enter room code"
-              className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 uppercase"
-              maxLength={6}
-            />
-          </div>
-          
-          <button
-            onClick={handleJoinGame}
-            disabled={isJoining}
-            className="w-full py-3 bg-accent-600 text-white font-bold rounded-lg hover:bg-accent-700 focus:outline-none focus:ring-2 focus:ring-accent-500 transition-colors"
-          >
-            {isJoining ? 'Joining...' : 'Join Game'}
-          </button>
-        </motion.div>
+        </div>
       </main>
       
       {/* Footer */}
