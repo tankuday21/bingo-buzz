@@ -454,13 +454,21 @@ io.on('connection', (socket) => {
       // Log the grid being sent
       console.log(`Sending grid to player ${username} (${socket.id}):`, JSON.stringify(playerGrid));
       
+      // Extract usernames for readyPlayers to ensure consistent data structure
+      const readyPlayerUsernames = (game.readyPlayers || []).map(player => 
+        typeof player === 'string' ? player : player.username
+      );
+      
       // Emit success event with game state
       socket.emit('joined-room', {
         grid: playerGrid,
-        players: game.players,
+        players: game.players.map(player => ({ 
+          id: player.id, 
+          username: player.username
+        })),
         isHost: game.players[0].id === socket.id,
         gameStarted: game.started,
-        readyPlayers: game.readyPlayers || [] // Send the list of ready players
+        readyPlayers: readyPlayerUsernames
       });
       
       // Also emit a separate grid-assigned event to ensure the client receives it
@@ -468,8 +476,11 @@ io.on('connection', (socket) => {
       
       // Notify other players
       socket.to(roomCode).emit('player-joined', {
-        players: game.players,
-        player: { username }
+        players: game.players.map(player => ({ 
+          id: player.id, 
+          username: player.username
+        })),
+        player: { id: socket.id, username }
       });
       
     } catch (error) {
@@ -849,7 +860,11 @@ io.on('connection', (socket) => {
       }
     } else {
       // Remove from ready players
-      game.readyPlayers = game.readyPlayers.filter(player => player !== username);
+      game.readyPlayers = game.readyPlayers.filter(player => 
+        typeof player === 'string' 
+          ? player !== username 
+          : player.username !== username
+      );
     }
     
     // Notify all players of the ready state change

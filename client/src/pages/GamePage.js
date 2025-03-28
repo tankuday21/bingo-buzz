@@ -309,10 +309,29 @@ const GamePage = () => {
     setGrid(newGrid);
   };
   
+  // Fix player mapping in the waiting room section
+  const normalizePlayer = (player) => {
+    // If player is just a string, convert to object format
+    if (typeof player === 'string') {
+      return { id: '', username: player };
+    }
+    // If player is already an object, make sure it has the expected properties
+    return {
+      id: player.id || '',
+      username: player.username || player
+    };
+  };
+
   const handleJoinedRoom = (data) => {
     console.log('Joined room:', data);
     setIsHost(data.isHost);
-    setPlayers(data.players || []);
+    
+    // Normalize players to handle different data structures
+    const normalizedPlayers = Array.isArray(data.players) 
+      ? data.players.map(p => normalizePlayer(p))
+      : [];
+    
+    setPlayers(normalizedPlayers);
     
     // If the game is already in progress, skip waiting room
     if (data.gameStarted) {
@@ -344,17 +363,20 @@ const GamePage = () => {
       return;
     }
     
-    console.log('Setting players to:', updatedPlayers);
-    setPlayers(updatedPlayers);
+    // Normalize players
+    const normalizedPlayers = updatedPlayers.map(p => normalizePlayer(p));
+    
+    console.log('Setting players to:', normalizedPlayers);
+    setPlayers(normalizedPlayers);
     
     // If a new player joined, show a toast
     if (!Array.isArray(data) && data.player) {
-      toast(`${data.player.username} joined the game`);
+      toast(`${data.player.username || data.player} joined the game`);
     }
     
     // Check if this player is the host (first player)
-    if (updatedPlayers.length > 0) {
-      const firstPlayer = updatedPlayers[0];
+    if (normalizedPlayers.length > 0) {
+      const firstPlayer = normalizedPlayers[0];
       const isFirstPlayer = firstPlayer.id === socket.id;
       setIsHost(isFirstPlayer);
       
@@ -613,17 +635,17 @@ const GamePage = () => {
                         key={index}
                         className="p-3 rounded-lg flex items-center justify-between"
                         style={{
-                          backgroundColor: readyPlayers.includes(player) ? `${theme.colors.success}33` : `${theme.colors.primary}11`,
-                          border: player === username ? `1px solid ${theme.colors.primary}` : 'none'
+                          backgroundColor: readyPlayers.includes(typeof player === 'string' ? player : player.username) ? `${theme.colors.success}33` : `${theme.colors.primary}11`,
+                          border: (typeof player === 'string' ? player : player.username) === username ? `1px solid ${theme.colors.primary}` : 'none'
                         }}
                       >
                         <div className="flex items-center">
-                          <span className="font-medium">{player}</span>
-                          {player === username && <span className="ml-2 text-xs opacity-70">(You)</span>}
-                          {isHost && player === username && <span className="ml-2 text-xs opacity-70">(Host)</span>}
+                          <span className="font-medium">{typeof player === 'string' ? player : player.username}</span>
+                          {(typeof player === 'string' ? player : player.username) === username && <span className="ml-2 text-xs opacity-70">(You)</span>}
+                          {isHost && (typeof player === 'string' ? player : player.username) === username && <span className="ml-2 text-xs opacity-70">(Host)</span>}
                         </div>
                         <div>
-                          {readyPlayers.includes(player) ? (
+                          {readyPlayers.includes(typeof player === 'string' ? player : player.username) ? (
                             <span className="px-2 py-1 text-xs rounded-full" style={{ backgroundColor: theme.colors.success, color: '#fff' }}>
                               Ready
                             </span>
