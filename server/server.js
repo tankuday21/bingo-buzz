@@ -656,15 +656,17 @@ io.on('connection', (socket) => {
       number = parseInt(number, 10);
     }
     
+    // Get player's grid
+    const playerGrid = game.grids[socket.id];
+    const flatGrid = playerGrid ? playerGrid.flat() : [];
+    
     // Validate that number is a valid integer
     if (typeof number !== 'number' || isNaN(number)) {
       console.log(`Invalid number value: ${number}, type: ${typeof number}`);
       
       // If we have a cellIndex, try to get the number from the grid
-      if (cellIndex !== undefined && game.grids[socket.id]) {
-        // Try to get the number from a flat grid
-        const flatGrid = game.grids[socket.id].flat();
-        if (flatGrid && cellIndex >= 0 && cellIndex < flatGrid.length) {
+      if (cellIndex !== undefined && flatGrid.length > 0) {
+        if (cellIndex >= 0 && cellIndex < flatGrid.length) {
           number = flatGrid[cellIndex];
           console.log(`Recovered number ${number} from cellIndex ${cellIndex}`);
         } else {
@@ -672,6 +674,16 @@ io.on('connection', (socket) => {
         }
       } else {
         return socket.emit('error', 'Invalid number format');
+      }
+    }
+    
+    // If we have a number but no cellIndex, find it in the grid
+    if (cellIndex === undefined && flatGrid.length > 0) {
+      cellIndex = flatGrid.indexOf(number);
+      console.log(`Found cellIndex ${cellIndex} for number ${number} in player's grid`);
+      
+      if (cellIndex === -1) {
+        console.log(`Number ${number} not found in player's grid:`, flatGrid);
       }
     }
     
@@ -683,10 +695,10 @@ io.on('connection', (socket) => {
     // Check if the number exists in any player's grid
     let numberExists = false;
     for (const playerId in game.grids) {
-      const playerGrid = game.grids[playerId];
-      if (playerGrid) {
-        const flatGrid = playerGrid.flat();
-        if (flatGrid.includes(number)) {
+      const grid = game.grids[playerId];
+      if (grid) {
+        const flat = grid.flat();
+        if (flat.includes(number)) {
           numberExists = true;
           break;
         }
@@ -695,7 +707,6 @@ io.on('connection', (socket) => {
     
     if (!numberExists) {
       console.log(`Number ${number} not found in any player grids`);
-      console.log('Available numbers in this player grid:', game.grids[socket.id].flat());
       return socket.emit('error', 'Invalid number');
     }
     
@@ -705,7 +716,7 @@ io.on('connection', (socket) => {
       game.timer = null;
     }
     
-    console.log(`Player ${socket.id} (${player.username}) marked number ${number} in room ${roomCode}`);
+    console.log(`Player ${socket.id} (${player.username}) marked number ${number} at cellIndex ${cellIndex} in room ${roomCode}`);
     
     // Mark the number
     game.markedNumbers.add(number);
@@ -715,6 +726,7 @@ io.on('connection', (socket) => {
     // Notify all players
     io.to(roomCode).emit('number-marked', {
       number,
+      cellIndex,
       markedBy: socket.id,
       player: player,
       automatic: false
@@ -807,6 +819,7 @@ io.on('connection', (socket) => {
           // Notify all players of the automatic marking
           io.to(roomCode).emit('number-marked', {
             number: randomNumber,
+            cellIndex: playerGrid.flat().indexOf(randomNumber), // Add cell index
             markedBy: socket.id,
             player: player,
             automatic: true
@@ -1003,23 +1016,34 @@ function startTurn(roomCode) {
     
     // Get unmarked numbers from the current player's grid only
     const playerGrid = game.grids[currentPlayer.id];
-    const unmarked = playerGrid ? playerGrid.flat().filter(num => !game.markedNumbers.has(num)) : [];
+    if (!playerGrid || playerGrid.length === 0) {
+      console.error(`No grid found for player ${currentPlayer.username}`);
+      // Move to next turn anyway
+      game.turnIndex = (game.turnIndex + 1) % game.players.length;
+      game.currentTurn = game.players[game.turnIndex].id;
+      startTurn(roomCode);
+      return;
+    }
+    
+    const flatGrid = playerGrid.flat();
+    const unmarked = flatGrid.filter(num => !game.markedNumbers.has(num));
     
     if (unmarked.length > 0) {
       // Select a random unmarked number from player's grid
       const randomNum = unmarked[Math.floor(Math.random() * unmarked.length)];
+      const cellIndex = flatGrid.indexOf(randomNum);
+      
+      console.log(`Automatically marking number ${randomNum} at cell index ${cellIndex} for ${currentPlayer.username}`);
       
       // Mark the number
       game.markedNumbers.add(randomNum);
       game.lastMarkedNumber = randomNum;
       game.lastMarkedTurn = game.turnIndex;
       
-      console.log(`Automatically marking number ${randomNum} for ${currentPlayer.username} in room ${roomCode}`);
-      
-      // Notify all players
+      // Notify all players with both number and cellIndex
       io.to(roomCode).emit('number-marked', {
-        cellIndex: playerGrid.flat().indexOf(randomNum), // Add cell index
         number: randomNum,
+        cellIndex: cellIndex,
         markedBy: game.currentTurn,
         player: currentPlayer,
         automatic: true
@@ -1049,11 +1073,13 @@ function startTurn(roomCode) {
         
         // End the game
         game.started = false;
-        return; // Exit without moving to next turn
+        return;
       }
+    } else {
+      console.log(`No unmarked numbers left for player ${currentPlayer.username}`);
     }
     
-    // Move to next turn (whether we marked a number or not)
+    // Move to next turn whether we marked a number or not
     if (game.started) {
       game.turnIndex = (game.turnIndex + 1) % game.players.length;
       game.currentTurn = game.players[game.turnIndex].id;

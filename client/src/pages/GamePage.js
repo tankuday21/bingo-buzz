@@ -51,6 +51,9 @@ const GamePage = () => {
   const hasJoinedRef = useRef(false);
   const timerRef = useRef(null);
   
+  // Add socket connection status tracking
+  const [socketConnected, setSocketConnected] = useState(socket.connected);
+  
   const pageVariants = {
     initial: { opacity: 0, y: 20 },
     animate: { 
@@ -207,73 +210,47 @@ const GamePage = () => {
     };
   }, [gameStarted, isMyTurn, roomCode]);
   
-  // Handle socket disconnection
+  // Monitor socket connection status
   useEffect(() => {
+    // Check initial connection status
+    setSocketConnected(socket.connected);
+    
+    const handleConnect = () => {
+      console.log('Socket connected');
+      setSocketConnected(true);
+      
+      // If we're in a game, try to rejoin
+      if (roomCode && username) {
+        console.log('Attempting to rejoin game after reconnection');
+        socket.emit('rejoin-room', { roomCode, username });
+      }
+    };
+    
     const handleDisconnect = (reason) => {
       console.log('Socket disconnected:', reason);
+      setSocketConnected(false);
       toast.error('Connection lost. Attempting to reconnect...');
+      
       // Clear timer and pause game state
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
       }
-      setTimer(15);
-      setIsMyTurn(false);
     };
-
-    const handleReconnect = (attemptNumber) => {
-      console.log('Socket reconnected after', attemptNumber, 'attempts');
-      toast.success('Connection restored');
-      // Attempt to rejoin the game
-      if (roomCode && username) {
-        console.log('Attempting to rejoin game:', roomCode);
-        socket.emit('rejoin-room', { roomCode, username });
-      }
-    };
-
-    const handleReconnectError = (error) => {
-      console.error('Reconnection error:', error);
-      toast.error('Failed to reconnect. Please refresh the page.');
-    };
-
-    const handleGameState = (state) => {
-      console.log('Received game state:', state);
-      setPlayers(state.players);
-      setGrid(state.grid);
-      setMarkedCells(state.markedCells);
-      setCurrentTurnName(state.currentTurn);
-      setIsMyTurn(state.currentTurn === username);
-      if (state.lastMarkedCell) {
-        setMarkedHistory(prev => [...prev, state.lastMarkedCell]);
-      }
-    };
-
-    const handlePlayerDisconnected = ({ username: disconnectedUser, temporary }) => {
-      console.log('Player disconnected:', disconnectedUser, temporary);
-      toast.error(`${disconnectedUser} ${temporary ? 'lost connection' : 'left the game'}`);
-    };
-
-    const handlePlayerReconnected = ({ username: reconnectedUser }) => {
-      console.log('Player reconnected:', reconnectedUser);
-      toast.success(`${reconnectedUser} reconnected to the game`);
-    };
-
-    // Add event listeners
+    
+    // Add connection event listeners
+    socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
-    socket.on('reconnect', handleReconnect);
-    socket.on('reconnect_error', handleReconnectError);
-    socket.on('game-state', handleGameState);
-    socket.on('player-disconnected', handlePlayerDisconnected);
-    socket.on('player-reconnected', handlePlayerReconnected);
-
-    // Cleanup
+    
+    // Try to connect if not already connected
+    if (!socket.connected) {
+      console.log('Socket not connected, attempting to connect');
+      socket.connect();
+    }
+    
     return () => {
+      socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
-      socket.off('reconnect', handleReconnect);
-      socket.off('reconnect_error', handleReconnectError);
-      socket.off('game-state', handleGameState);
-      socket.off('player-disconnected', handlePlayerDisconnected);
-      socket.off('player-reconnected', handlePlayerReconnected);
     };
   }, [roomCode, username]);
   
@@ -473,28 +450,44 @@ const GamePage = () => {
     }
   };
   
-  const handleNumberMarked = ({ cellIndex, markedBy, player, automatic }) => {
-    console.log('Number marked:', cellIndex, 'by player:', player?.username || markedBy);
+  const handleNumberMarked = ({ cellIndex, number, markedBy, player, automatic }) => {
+    console.log('Number marked:', { cellIndex, number, markedBy, player });
     
-    // Only add the specific number to the marked set
-    setMarkedCells((prev) => {
-      const newMarked = [...prev, cellIndex];
-      return newMarked;
-    });
+    if (cellIndex === undefined && number !== undefined) {
+      // If no cellIndex provided but number is available, try to find it in our grid
+      const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
+      cellIndex = flatGrid.indexOf(number);
+      console.log(`Found cellIndex ${cellIndex} for number ${number} in grid`);
+    }
     
-    // Add to history with player info
-    setMarkedHistory((prev) => [
-      ...prev, 
-      { 
-        cellIndex, 
-        player: player?.username || 'Unknown', 
-        automatic: !!automatic 
+    // Only proceed if we have a valid cellIndex
+    if (cellIndex !== undefined && cellIndex !== -1) {
+      // Add to marked cells if not already there
+      setMarkedCells((prev) => {
+        if (!prev.includes(cellIndex)) {
+          console.log(`Adding cellIndex ${cellIndex} to markedCells`);
+          return [...prev, cellIndex];
+        }
+        return prev;
+      });
+      
+      // Add to history with player info
+      setMarkedHistory((prev) => [
+        ...prev, 
+        { 
+          cellIndex, 
+          number,
+          player: player?.username || 'Unknown', 
+          automatic: !!automatic 
+        }
+      ]);
+      
+      // Play sound effect
+      if (audioRef.current) {
+        audioRef.current.play().catch(e => console.log('Audio play error:', e));
       }
-    ]);
-    
-    // Play sound effect
-    if (audioRef.current) {
-      audioRef.current.play().catch(e => console.log('Audio play error:', e));
+    } else {
+      console.error(`Invalid cellIndex ${cellIndex} for marked number ${number}`);
     }
   };
   
@@ -616,6 +609,22 @@ const GamePage = () => {
       cellIndex
     });
   };
+  
+  // Add connection status indicator to UI
+  const ConnectionStatus = () => (
+    <div className="fixed bottom-4 right-4 z-50">
+      <div 
+        className={`px-3 py-1 rounded-full text-sm font-medium flex items-center ${
+          socketConnected ? 'bg-green-500' : 'bg-red-500'
+        } text-white`}
+      >
+        <span className={`w-2 h-2 rounded-full mr-2 ${
+          socketConnected ? 'bg-green-200' : 'bg-red-200'
+        }`}></span>
+        {socketConnected ? 'Connected' : 'Disconnected'}
+      </div>
+    </div>
+  );
   
   return (
     <motion.div 
@@ -873,6 +882,9 @@ const GamePage = () => {
       
       {/* Audio elements */}
       <audio ref={audioRef} src="/sounds/game-start.mp3" preload="auto" />
+      
+      {/* Connection status indicator */}
+      <ConnectionStatus />
     </motion.div>
   );
 };

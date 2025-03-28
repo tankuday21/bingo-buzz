@@ -62,29 +62,44 @@ const BingoGrid = ({
       fontSize: '1.25rem',
       fontWeight: '600',
       cursor: 'pointer',
-      transition: 'all 0.2s ease',
+      transition: 'all 0.3s ease',
       borderRadius: '0.5rem',
       padding: '0.5rem',
       maxWidth: '80px',
       maxHeight: '80px',
-      margin: 'auto'
+      margin: 'auto',
+      position: 'relative',
+      overflow: 'hidden'
     };
 
-    if (markedCells?.includes(index)) {
+    // Check if this cell is marked
+    const isMarked = Array.isArray(markedCells) && markedCells.includes(index);
+    
+    // Check if this cell is part of a winning line
+    const isWinningCell = Array.isArray(winningLines) && winningLines.includes(index);
+    
+    // Log the state for debugging
+    if (isMarked || isWinningCell) {
+      console.log(`Cell ${index} - marked: ${isMarked}, winning: ${isWinningCell}`);
+    }
+
+    if (isMarked) {
       return {
         ...baseStyle,
         backgroundColor: theme.colors.primary,
         color: '#ffffff',
         transform: 'scale(1.02)',
+        boxShadow: `0 0 0 2px ${theme.colors.primary}, 0 0 10px rgba(0,0,0,0.2)`,
       };
     }
 
-    if (winningLines?.includes(index)) {
+    if (isWinningCell) {
       return {
         ...baseStyle,
         backgroundColor: theme.colors.success,
         color: '#ffffff',
-        transform: 'scale(1.02)',
+        transform: 'scale(1.05)',
+        boxShadow: `0 0 0 2px ${theme.colors.success}, 0 0 15px rgba(0,0,0,0.3)`,
       };
     }
 
