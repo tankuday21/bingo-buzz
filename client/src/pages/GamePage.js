@@ -453,20 +453,25 @@ const GamePage = () => {
   const handleNumberMarked = ({ cellIndex, number, markedBy, player, automatic }) => {
     console.log('Number marked:', { cellIndex, number, markedBy, player });
     
-    if (cellIndex === undefined && number !== undefined) {
-      // If no cellIndex provided but number is available, try to find it in our grid
-      const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
-      cellIndex = flatGrid.indexOf(number);
-      console.log(`Found cellIndex ${cellIndex} for number ${number} in grid`);
+    if (!number) {
+      console.error('No number provided in number-marked event');
+      return;
     }
     
-    // Only proceed if we have a valid cellIndex
-    if (cellIndex !== undefined && cellIndex !== -1) {
+    // Each player should find where this number is in THEIR OWN grid
+    // Don't use the cellIndex from the server directly
+    const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
+    const localCellIndex = flatGrid.indexOf(number);
+    
+    console.log(`Number ${number} received, found at position ${localCellIndex} in my grid`);
+    
+    // Only proceed if we found the number in our grid
+    if (localCellIndex !== -1) {
       // Add to marked cells if not already there
       setMarkedCells((prev) => {
-        if (!prev.includes(cellIndex)) {
-          console.log(`Adding cellIndex ${cellIndex} to markedCells`);
-          return [...prev, cellIndex];
+        if (!prev.includes(localCellIndex)) {
+          console.log(`Adding cellIndex ${localCellIndex} to markedCells for number ${number}`);
+          return [...prev, localCellIndex];
         }
         return prev;
       });
@@ -475,7 +480,7 @@ const GamePage = () => {
       setMarkedHistory((prev) => [
         ...prev, 
         { 
-          cellIndex, 
+          cellIndex: localCellIndex, 
           number,
           player: player?.username || 'Unknown', 
           automatic: !!automatic 
@@ -487,7 +492,7 @@ const GamePage = () => {
         audioRef.current.play().catch(e => console.log('Audio play error:', e));
       }
     } else {
-      console.error(`Invalid cellIndex ${cellIndex} for marked number ${number}`);
+      console.log(`Number ${number} not found in my grid`);
     }
   };
   

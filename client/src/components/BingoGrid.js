@@ -60,7 +60,7 @@ const BingoGrid = ({
       alignItems: 'center',
       justifyContent: 'center',
       fontSize: '1.25rem',
-      fontWeight: '600',
+      fontWeight: '700',
       cursor: 'pointer',
       transition: 'all 0.3s ease',
       borderRadius: '0.5rem',
@@ -69,7 +69,8 @@ const BingoGrid = ({
       maxHeight: '80px',
       margin: 'auto',
       position: 'relative',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      textShadow: '0px 0px 1px rgba(0,0,0,0.2)'
     };
 
     // Check if this cell is marked
@@ -87,9 +88,11 @@ const BingoGrid = ({
       return {
         ...baseStyle,
         backgroundColor: theme.colors.primary,
-        color: '#ffffff',
-        transform: 'scale(1.02)',
+        color: '#FFFFFF',
+        fontWeight: '800',
+        transform: 'scale(1.05)',
         boxShadow: `0 0 0 2px ${theme.colors.primary}, 0 0 10px rgba(0,0,0,0.2)`,
+        textShadow: '0px 1px 2px rgba(0,0,0,0.3)'
       };
     }
 
@@ -97,9 +100,11 @@ const BingoGrid = ({
       return {
         ...baseStyle,
         backgroundColor: theme.colors.success,
-        color: '#ffffff',
-        transform: 'scale(1.05)',
-        boxShadow: `0 0 0 2px ${theme.colors.success}, 0 0 15px rgba(0,0,0,0.3)`,
+        color: '#FFFFFF',
+        fontWeight: '800',
+        transform: 'scale(1.1)',
+        boxShadow: `0 0 0 3px ${theme.colors.success}, 0 0 15px rgba(0,0,0,0.3)`,
+        textShadow: '0px 1px 3px rgba(0,0,0,0.4)'
       };
     }
 
