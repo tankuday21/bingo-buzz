@@ -1,10 +1,14 @@
 import React, { useContext, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThemeContext } from '../context/ThemeContext';
+import { themes } from '../styles/themes';
 
 const ThemeSwitcher = () => {
   const { currentThemeName, toggleTheme, availableThemes, theme } = useContext(ThemeContext);
   const [isOpen, setIsOpen] = useState(false);
+
+  // Fallback to default theme if current theme is undefined
+  const currentTheme = theme || themes.default;
 
   const dropdownVariants = {
     hidden: { 
@@ -74,10 +78,10 @@ const ThemeSwitcher = () => {
         onClick={() => setIsOpen(!isOpen)}
         className="px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors duration-200"
         style={{
-          backgroundColor: theme.colors.card,
-          color: theme.colors.text,
-          border: `1px solid ${theme.colors.border}`,
-          boxShadow: theme.effects?.cardShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+          backgroundColor: currentTheme.colors.card,
+          color: currentTheme.colors.text,
+          border: `1px solid ${currentTheme.colors.border}`,
+          boxShadow: currentTheme.effects?.cardShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
           backdropFilter: 'blur(10px)',
           opacity: 0.8
         }}
@@ -95,9 +99,9 @@ const ThemeSwitcher = () => {
             exit="exit"
             className="absolute right-0 mt-2 w-48 rounded-lg overflow-hidden shadow-lg z-50"
             style={{
-              backgroundColor: theme.colors.card,
-              border: `1px solid ${theme.colors.border}`,
-              boxShadow: theme.effects?.cardShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+              backgroundColor: currentTheme.colors.card,
+              border: `1px solid ${currentTheme.colors.border}`,
+              boxShadow: currentTheme.effects?.cardShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
               backdropFilter: 'blur(10px)',
               opacity: 0.8
             }}
@@ -112,11 +116,11 @@ const ThemeSwitcher = () => {
                 className="w-full px-4 py-2 flex items-center space-x-2 transition-colors duration-200"
                 style={{
                   backgroundColor: currentThemeName === themeOption.id 
-                    ? theme.colors.primary[500] 
+                    ? currentTheme.colors.primary[500] 
                     : 'transparent',
                   color: currentThemeName === themeOption.id 
                     ? 'white' 
-                    : theme.colors.text
+                    : currentTheme.colors.text
                 }}
                 whileHover={{ x: 4 }}
               >

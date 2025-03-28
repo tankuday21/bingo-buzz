@@ -1,7 +1,15 @@
 import React, { createContext, useState, useEffect } from 'react';
 import { themes } from '../styles/themes';
 
-export const ThemeContext = createContext();
+export const ThemeContext = createContext({
+  theme: themes.default,
+  currentThemeName: 'default',
+  toggleTheme: () => {},
+  availableThemes: Object.keys(themes).map(key => ({
+    id: key,
+    name: themes[key].name
+  }))
+});
 
 export const ThemeProvider = ({ children }) => {
   const [currentTheme, setCurrentTheme] = useState(() => {
@@ -14,27 +22,29 @@ export const ThemeProvider = ({ children }) => {
     
     // Apply theme-specific styles to body
     const theme = themes[currentTheme];
-    document.body.style.backgroundColor = theme.colors.background;
-    document.body.style.color = theme.colors.text;
-    
-    if (theme.effects.texture) {
-      document.body.style.backgroundImage = theme.effects.texture;
-    } else {
-      document.body.style.backgroundImage = 'none';
-    }
-    
-    if (theme.effects.stars) {
-      document.body.style.backgroundImage = theme.effects.stars;
-      document.body.style.backgroundSize = '30px 30px';
-    }
-    
-    if (theme.effects.festive) {
-      document.body.style.backgroundImage = theme.effects.festive;
-      document.body.style.backgroundSize = '24px 24px';
+    if (theme) {
+      document.body.style.backgroundColor = theme.colors.background;
+      document.body.style.color = theme.colors.text;
+      
+      if (theme.effects.texture) {
+        document.body.style.backgroundImage = theme.effects.texture;
+      } else {
+        document.body.style.backgroundImage = 'none';
+      }
+      
+      if (theme.effects.stars) {
+        document.body.style.backgroundImage = theme.effects.stars;
+        document.body.style.backgroundSize = '30px 30px';
+      }
+      
+      if (theme.effects.festive) {
+        document.body.style.backgroundImage = theme.effects.festive;
+        document.body.style.backgroundSize = '24px 24px';
+      }
     }
   }, [currentTheme]);
 
-  const getThemeValue = () => themes[currentTheme];
+  const getThemeValue = () => themes[currentTheme] || themes.default;
 
   const toggleTheme = (themeName) => {
     if (themes[themeName]) {
@@ -42,16 +52,18 @@ export const ThemeProvider = ({ children }) => {
     }
   };
 
+  const value = {
+    theme: getThemeValue(),
+    currentThemeName: currentTheme,
+    toggleTheme,
+    availableThemes: Object.keys(themes).map(key => ({
+      id: key,
+      name: themes[key].name
+    }))
+  };
+
   return (
-    <ThemeContext.Provider value={{ 
-      theme: getThemeValue(),
-      currentThemeName: currentTheme,
-      toggleTheme,
-      availableThemes: Object.keys(themes).map(key => ({
-        id: key,
-        name: themes[key].name
-      }))
-    }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );
