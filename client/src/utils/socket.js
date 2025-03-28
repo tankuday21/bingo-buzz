@@ -1,6 +1,8 @@
 import io from 'socket.io-client';
 
-const SOCKET_URL = process.env.REACT_APP_SERVER_URL || 'https://bingo-buzz.up.railway.app';
+// Remove any trailing slashes from the URL
+const baseUrl = (process.env.REACT_APP_SERVER_URL || 'https://bingo-buzz.up.railway.app').replace(/\/$/, '');
+const SOCKET_URL = baseUrl;
 
 const socket = io(SOCKET_URL, {
   transports: ['websocket'],

@@ -38,8 +38,9 @@ const HomePage = () => {
       console.log('Sending request to:', '/api/games');
       console.log('Request payload:', { username, gridSize });
       
-      // Use environment variable for API URL
-      const apiUrl = `${process.env.REACT_APP_SERVER_URL}/api/games`;
+      // Use environment variable for API URL, ensure no double slashes
+      const baseUrl = process.env.REACT_APP_SERVER_URL?.replace(/\/$/, '');
+      const apiUrl = `${baseUrl}/api/games`;
       console.log('Using API URL:', apiUrl);
       
       const response = await axios.post(apiUrl, { 
@@ -122,8 +123,9 @@ const HomePage = () => {
     
     try {
       setIsJoining(true);
-      // Use environment variable for API URL
-      const apiUrl = `${process.env.REACT_APP_SERVER_URL}/api/join-room`;
+      // Use environment variable for API URL, ensure no double slashes
+      const baseUrl = process.env.REACT_APP_SERVER_URL?.replace(/\/$/, '');
+      const apiUrl = `${baseUrl}/api/join-room`;
       console.log('Using API URL for joining:', apiUrl);
       
       await axios.post(apiUrl, { roomCode });
