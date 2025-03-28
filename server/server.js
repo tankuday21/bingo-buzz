@@ -13,7 +13,21 @@ dotenv.config();
 
 // Initialize express app
 const app = express();
-app.use(cors());
+
+// Update CORS configuration
+const corsOptions = {
+  origin: ['https://bingo-buzz.vercel.app', 'http://localhost:3000', '*'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+
+// Also enable CORS for preflight OPTIONS requests
+app.options('*', cors(corsOptions));
+
 app.use(express.json()); // Add JSON body parser middleware
 
 // Create HTTP server
@@ -21,17 +35,16 @@ const server = http.createServer(app);
 
 // Initialize Socket.io
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  },
-  pingTimeout: 10000,
-  pingInterval: 20000,
+  cors: corsOptions,
+  pingTimeout: 30000,
+  pingInterval: 10000,
   transports: ['websocket', 'polling'],
-  maxHttpBufferSize: 1e6, // 1MB max message size
+  maxHttpBufferSize: 1e6,
   perMessageDeflate: {
-    threshold: 1024 // Compress messages > 1KB
-  }
+    threshold: 1024
+  },
+  connectTimeout: 45000,
+  path: '/socket.io/'
 });
 
 // Add game cleanup mechanism
@@ -216,17 +229,35 @@ app.use((req, res, next) => {
   next();
 });
 
-// Improve create-game endpoint efficiency
-app.post('/api/create-game', async (req, res) => {
+// Fix API endpoints
+app.post('/api/games', async (req, res) => {
   try {
+    console.log('Received game creation request:', req.body);
+    
+    // Check if request body exists and has content
+    if (!req.body || Object.keys(req.body).length === 0) {
+      console.error('Game creation failed: Empty request body');
+      return res.status(400).json({ error: 'Empty request body' });
+    }
+    
+    const { username, gridSize = '5x5' } = req.body;
+    
+    if (!username) {
+      console.log('Game creation failed: Username is required');
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    
+    console.log(`Creating game with username: ${username}, grid size: ${gridSize}`);
+    
     // Check the total number of active games to prevent resource exhaustion
     if (Object.keys(games).length > 500) {
       return res.status(503).json({ error: 'Server at capacity. Please try again later.' });
     }
     
-    // Generate a shorter room code (4 characters) to reduce memory usage
+    // Generate a unique room code
     let roomCode;
     let attempts = 0;
+    
     const generateCode = () => {
       const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
       return Array(6).fill().map(() => letters[Math.floor(Math.random() * letters.length)]).join('');
@@ -235,29 +266,144 @@ app.post('/api/create-game', async (req, res) => {
     do {
       roomCode = generateCode();
       attempts++;
-      // Avoid infinite loop
       if (attempts > 10) {
         return res.status(500).json({ error: 'Could not generate a unique room code. Please try again.' });
       }
     } while (games[roomCode]);
     
-    // Rest of endpoint code...
+    // Create game object
+    games[roomCode] = {
+      roomCode,
+      gridSize,
+      players: [],
+      grids: {},
+      playerNumbers: {}, // Track which numbers are assigned to which player
+      started: false,
+      startTime: null,
+      turnIndex: 0,
+      turnDuration: 15000, // 15 seconds in milliseconds
+      markedNumbers: new Set(),
+      lastMarkedNumber: undefined,
+      lastMarkedTurn: -1, // Initialize to -1 to ensure it doesn't match the first turn (0)
+      createdAt: Date.now(),
+      lastActive: Date.now(),
+      hostUsername: username, // Store the host username instead of socket ID
+      usedGrids: new Set(), // Add tracking for used grids
+      readyPlayers: [] // Add readyPlayers array to track who's ready
+    };
+    
+    console.log(`New game created: ${roomCode} by ${username}, grid size: ${gridSize}`);
+    
+    // Return the room code to the client
+    return res.status(201).json({ roomCode });
   } catch (error) {
-    console.error('Error creating game:', error);
-    res.status(500).json({ error: 'Failed to create game' });
+    console.error('Error in game creation API:', error);
+    return res.status(500).json({ error: 'Failed to create game: ' + error.message });
   }
 });
 
-// Add a health check endpoint for Railway
+// Add a compatibility endpoint for the original /api/create-game path
+app.post('/api/create-game', async (req, res) => {
+  // Simply forward to the main endpoint
+  try {
+    const result = await new Promise((resolve, reject) => {
+      app._router.handle(
+        { ...req, url: '/api/games', path: '/api/games' },
+        { ...res, send: resolve },
+        reject
+      );
+    });
+    return result;
+  } catch (error) {
+    console.error('Error forwarding to /api/games:', error);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Add a comprehensive health check endpoint for Railway
 app.get('/health', (req, res) => {
-  // Return basic stats
-  const stats = {
-    uptime: process.uptime(),
-    activeGames: Object.keys(games).length,
-    memory: process.memoryUsage().heapUsed / 1024 / 1024 // MB
-  };
-  
-  res.json(stats);
+  try {
+    // Check MongoDB status
+    const dbStatus = mongoConnected ? 'connected' : 'disconnected';
+    
+    // Calculate uptime
+    const uptime = process.uptime();
+    const uptimeFormatted = {
+      days: Math.floor(uptime / 86400),
+      hours: Math.floor((uptime % 86400) / 3600),
+      minutes: Math.floor((uptime % 3600) / 60),
+      seconds: Math.floor(uptime % 60)
+    };
+    
+    // Get memory usage
+    const memoryUsage = process.memoryUsage();
+    const memoryStats = {
+      rss: `${Math.round(memoryUsage.rss / 1024 / 1024)} MB`,
+      heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)} MB`,
+      heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)} MB`,
+      external: `${Math.round(memoryUsage.external / 1024 / 1024)} MB`
+    };
+    
+    // Get active games and players count
+    const gamesCount = Object.keys(games).length;
+    let totalPlayers = 0;
+    let activePlayers = 0;
+    
+    for (const roomCode in games) {
+      const game = games[roomCode];
+      if (game && game.players) {
+        totalPlayers += game.players.length;
+        activePlayers += game.players.filter(p => p.connected !== false).length;
+      }
+    }
+    
+    const stats = {
+      status: 'healthy',
+      version: process.env.npm_package_version || '1.0.0',
+      database: {
+        status: dbStatus,
+        retries: mongoRetryCount
+      },
+      uptime: uptimeFormatted,
+      memory: memoryStats,
+      games: {
+        active: gamesCount,
+        totalPlayers,
+        activePlayers,
+        connectionCount: io.engine.clientsCount || 0
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    // Set response headers for no caching
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    return res.status(200).json(stats);
+  } catch (error) {
+    console.error('Health check error:', error);
+    return res.status(500).json({ 
+      status: 'unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Add a root route for basic connectivity verification
+app.get('/', (req, res) => {
+  res.status(200).send({
+    status: 'online',
+    service: 'Bingo Buzz API',
+    version: process.env.npm_package_version || '1.0.0',
+    endpoints: [
+      { path: '/api/games', method: 'POST', description: 'Create a new game' },
+      { path: '/api/create-game', method: 'POST', description: 'Create a new game (alias)' },
+      { path: '/health', method: 'GET', description: 'Get server health status' }
+    ],
+    message: 'Welcome to the Bingo Buzz API. Use Socket.IO to connect for real-time gameplay.'
+  });
 });
 
 // Socket.io logic
