@@ -27,13 +27,19 @@ const io = new Server(server, {
   },
   pingTimeout: 30000,
   pingInterval: 10000,
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  maxHttpBufferSize: 1e8,
+  connectTimeout: 45000
 });
 
 // Add game cleanup mechanism
 const GAME_CLEANUP_INTERVAL = 1000 * 60 * 15; // 15 minutes
 const GAME_TIMEOUT = 1000 * 60 * 60 * 24; // 24 hours
 const INACTIVE_GAME_TIMEOUT = 1000 * 60 * 30; // 30 minutes
+
+// Track active connections
+const activeConnections = new Map();
 
 function cleanupOldGames() {
   const now = Date.now();
@@ -264,9 +270,21 @@ app.get('/api/health', (req, res) => {
 // Socket.io logic
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
+  
+  // Track connection time
+  activeConnections.set(socket.id, {
+    connectedAt: Date.now(),
+    lastActivity: Date.now(),
+    reconnects: 0
+  });
 
   // Handle ping from client
   socket.on('ping', () => {
+    const connection = activeConnections.get(socket.id);
+    if (connection) {
+      connection.lastActivity = Date.now();
+      activeConnections.set(socket.id, connection);
+    }
     socket.emit('pong');
   });
 
@@ -291,6 +309,24 @@ io.on('connection', (socket) => {
         if (reason === 'transport close' || reason === 'ping timeout') {
           player.connected = false;
           player.lastDisconnect = Date.now();
+          player.disconnectReason = reason;
+          
+          // Set a timeout to remove the player if they don't reconnect
+          setTimeout(() => {
+            const currentGame = games[roomCode];
+            if (currentGame) {
+              const playerStillDisconnected = currentGame.players.find(
+                p => p.socketId === socket.id && !p.connected
+              );
+              if (playerStillDisconnected) {
+                console.log(`Removing player ${player.username} after timeout`);
+                currentGame.players = currentGame.players.filter(p => p.socketId !== socket.id);
+                if (currentGame.players.length === 0) {
+                  delete games[roomCode];
+                }
+              }
+            }
+          }, 60000); // 1 minute timeout
         } else {
           // Remove player for permanent disconnections
           game.players.splice(playerIndex, 1);
@@ -305,6 +341,9 @@ io.on('connection', (socket) => {
         updateGameActivity(roomCode);
       }
     }
+    
+    // Clean up connection tracking
+    activeConnections.delete(socket.id);
   });
 
   // Handle reconnection

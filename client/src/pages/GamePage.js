@@ -106,39 +106,43 @@ const GamePage = () => {
     };
   }, [roomCode, username]);
   
-  // useEffect for timer management
+  // useEffect for timer management - separate from turn handling
   useEffect(() => {
     let isActive = true;
     
-    // Only run this effect when game has started and timer has been set
-    if (gameStarted && isMyTurn) {
-      // Clear any existing interval
+    const startTimer = () => {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
       }
       
-      // Create new interval to decrement timer
       timerIntervalRef.current = setInterval(() => {
         if (!isActive) return;
         
         setTimer((prev) => {
-          // If timer reaches 0, automatically end turn
-          if (prev <= 1) {
-            console.log('Timer expired, automatically ending turn');
-            if (socket.connected) {
-              socket.emit('end-turn', { roomCode });
-            } else {
-              console.error('Socket disconnected, cannot end turn');
-              toast.error('Connection lost. Please refresh the page.');
-            }
-            return 0;
+          const newValue = Math.max(0, prev - 1);
+          console.log(`Timer: ${newValue}, Is my turn: ${isMyTurn}`);
+          
+          if (newValue === 0 && isMyTurn && socket.connected) {
+            console.log('Timer reached zero, ending turn automatically');
+            clearInterval(timerIntervalRef.current);
+            socket.emit('end-turn', { roomCode });
           }
-          return Math.max(0, prev - 1);
+          return newValue;
         });
       }, 1000);
+    };
+
+    if (gameStarted && isMyTurn) {
+      console.log('Starting timer for my turn');
+      startTimer();
+    } else if (!isMyTurn) {
+      console.log('Not my turn, clearing timer');
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
     }
     
-    // Cleanup interval on unmount or when dependencies change
     return () => {
       isActive = false;
       if (timerIntervalRef.current) {
@@ -146,7 +150,7 @@ const GamePage = () => {
         timerIntervalRef.current = null;
       }
     };
-  }, [gameStarted, isMyTurn, roomCode, socket]);
+  }, [gameStarted, isMyTurn, roomCode]);
   
   // Handle socket disconnection
   useEffect(() => {
@@ -371,7 +375,8 @@ const GamePage = () => {
     // Update turn info
     setCurrentTurn(playerId);
     setIsMarking(false); // Reset marking state when a new turn starts
-    setIsMyTurn(playerId === socket.id);
+    const isPlayerTurn = playerId === socket.id;
+    setIsMyTurn(isPlayerTurn);
     
     // Find the player name for display
     const playerName = player?.username || 
@@ -382,28 +387,15 @@ const GamePage = () => {
     
     // Reset the timer
     setTimer(15);
-    clearInterval(timerIntervalRef.current);
     
-    // Start a new timer interval
-    timerIntervalRef.current = setInterval(() => {
-      setTimer((prev) => {
-        const newValue = Math.max(0, prev - 1);
-        console.log(`Timer: ${newValue}, Is my turn: ${isMyTurn}`);
-        
-        // Check if timer has reached zero
-        if (newValue === 0 && isMyTurn) {
-          console.log('Timer reached zero, ending turn automatically');
-          // Clear this interval as we're ending the turn
-          clearInterval(timerIntervalRef.current);
-          // Send the end-turn event
-          socket.emit('end-turn', { roomCode });
-        }
-        return newValue;
-      });
-    }, 1000);
+    // Clear any existing timer
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
     
     // Show toast for whose turn it is
-    if (isMyTurn) {
+    if (isPlayerTurn) {
       toast.success('It\'s your turn!');
     } else {
       toast(`It's ${playerName}'s turn`);
