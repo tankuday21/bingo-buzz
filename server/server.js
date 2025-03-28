@@ -208,7 +208,8 @@ app.post('/api/games', (req, res) => {
       lastMarkedTurn: -1, // Initialize to -1 to ensure it doesn't match the first turn (0)
       createdAt: Date.now(),
       host: username,
-      usedGrids: new Set() // Add tracking for used grids
+      usedGrids: new Set(), // Add tracking for used grids
+      readyPlayers: [] // Add readyPlayers array to track who's ready
     };
     
     console.log(`New game created: ${roomCode} by ${username}, grid size: ${gridSize}`);
@@ -457,7 +458,9 @@ io.on('connection', (socket) => {
       socket.emit('joined-room', {
         grid: playerGrid,
         players: game.players,
-        isHost: game.players[0].id === socket.id
+        isHost: game.players[0].id === socket.id,
+        gameStarted: game.started,
+        readyPlayers: game.readyPlayers || [] // Send the list of ready players
       });
       
       // Also emit a separate grid-assigned event to ensure the client receives it
@@ -482,8 +485,14 @@ io.on('connection', (socket) => {
       return socket.emit('error', 'Room not found');
     }
     
-    if (game.players.length < 1) {
-      return socket.emit('error', 'Not enough players');
+    // Only host can start the game
+    if (socket.id !== game.host) {
+      return socket.emit('error', 'Only the host can start the game');
+    }
+    
+    // Check if enough players are ready
+    if (!game.readyPlayers || game.readyPlayers.length < 1) {
+      return socket.emit('error', 'Not enough players are ready');
     }
     
     // Start the game
@@ -557,7 +566,8 @@ io.on('connection', (socket) => {
     // Notify all players
     io.to(roomCode).emit('game-started', {
       players: game.players,
-      currentTurn: game.currentTurn
+      currentTurn: game.currentTurn,
+      grid: game.grids[socket.id] // Each player gets their own grid
     });
     
     // Send each player their own grid
@@ -815,6 +825,38 @@ io.on('connection', (socket) => {
       console.log(`Generated and sending new grid to player ${socket.id}:`, JSON.stringify(newGrid));
       socket.emit('grid-assigned', newGrid);
     }
+  });
+
+  // Handle player ready state toggling
+  socket.on('toggle-ready', ({ roomCode, username, isReady }) => {
+    console.log(`Player ${username} toggled ready state to ${isReady} in room ${roomCode}`);
+    const game = games[roomCode];
+    
+    if (!game) {
+      return socket.emit('error', 'Room not found');
+    }
+    
+    // Initialize readyPlayers array if not exists
+    if (!game.readyPlayers) {
+      game.readyPlayers = [];
+    }
+    
+    // Update ready state
+    if (isReady) {
+      // Add to ready players if not already there
+      if (!game.readyPlayers.includes(username)) {
+        game.readyPlayers.push(username);
+      }
+    } else {
+      // Remove from ready players
+      game.readyPlayers = game.readyPlayers.filter(player => player !== username);
+    }
+    
+    // Notify all players of the ready state change
+    io.to(roomCode).emit('player-ready', {
+      username,
+      readyPlayers: game.readyPlayers
+    });
   });
 });
 

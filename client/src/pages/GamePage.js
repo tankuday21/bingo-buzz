@@ -37,6 +37,11 @@ const GamePage = () => {
   const [showConfetti, setShowConfetti] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   
+  // Waiting room state
+  const [waitingForPlayers, setWaitingForPlayers] = useState(true);
+  const [readyPlayers, setReadyPlayers] = useState([]);
+  const [isReady, setIsReady] = useState(false);
+  
   // State for tracking if a number is being marked (to prevent multiple clicks)
   const [isMarking, setIsMarking] = useState(false);
   
@@ -113,6 +118,9 @@ const GamePage = () => {
     setWinningLines([]);
     setMarkedHistory([]);
     setGameMessage('');
+    setWaitingForPlayers(true);
+    setReadyPlayers([]);
+    setIsReady(false);
     
     // Only join room if we haven't already
     if (!hasJoinedRef.current) {
@@ -131,6 +139,7 @@ const GamePage = () => {
     socket.on('number-marked', handleNumberMarked);
     socket.on('game-won', handleGameWon);
     socket.on('error', handleError);
+    socket.on('player-ready', handlePlayerReady);
     
     // Clean up on unmount
     return () => {
@@ -143,6 +152,7 @@ const GamePage = () => {
       socket.off('number-marked', handleNumberMarked);
       socket.off('game-won', handleGameWon);
       socket.off('error', handleError);
+      socket.off('player-ready', handlePlayerReady);
       clearInterval(timerIntervalRef.current);
       hasJoinedRef.current = false;
     };
@@ -300,26 +310,26 @@ const GamePage = () => {
   };
   
   const handleJoinedRoom = (data) => {
-    console.log('Joined room event received:', data);
-    hasJoinedRef.current = true;
-    
-    // Set isHost status
+    console.log('Joined room:', data);
     setIsHost(data.isHost);
+    setPlayers(data.players || []);
     
-    // Set the grid if provided and valid
-    if (data.grid && Array.isArray(data.grid) && data.grid.length > 0) {
-      console.log('Setting grid from joined-room event:', data.grid);
-      setGrid(data.grid);
-    }
-    
-    // Validate and set players
-    if (Array.isArray(data.players)) {
-      console.log('Setting players from joined-room event:', data.players);
-      setPlayers(data.players);
+    // If the game is already in progress, skip waiting room
+    if (data.gameStarted) {
+      setWaitingForPlayers(false);
+      setGameStarted(true);
     } else {
-      console.error('Invalid players data received in joined-room:', data.players);
-      setPlayers([]);
+      setWaitingForPlayers(true);
+      setGameStarted(false);
     }
+    
+    // Update ready players list if available
+    if (data.readyPlayers) {
+      setReadyPlayers(data.readyPlayers);
+      setIsReady(data.readyPlayers.includes(username));
+    }
+    
+    toast.success(`Joined room: ${roomCode}`);
   };
   
   const handlePlayerJoined = (data) => {
@@ -380,28 +390,30 @@ const GamePage = () => {
   };
   
   const handleGameStarted = (data) => {
-    console.log('Game started event data:', data);
-    
-    // Update players if provided
-    if (Array.isArray(data.players)) {
-      setPlayers(data.players);
-    }
-    
-    // Update current turn
-    setCurrentTurn(data.currentTurn);
-    setIsMyTurn(data.currentTurn === username);
-    
-    // Set game as started
+    console.log('Game started:', data);
     setGameStarted(true);
+    setWaitingForPlayers(false);
     
-    // If we don't have a grid yet, request one
-    if (!grid || grid.length === 0) {
-      console.log('No grid found at game start, requesting one');
-      socket.emit('request-grid', { roomCode });
+    if (data.grid) setGrid(data.grid);
+    if (data.currentTurn) {
+      setCurrentTurn(data.currentTurn);
+      setCurrentTurnName(data.currentTurn);
+      setIsMyTurn(data.currentTurn === username);
     }
+    
+    // Reset UI state
+    setWinner(null);
+    setWinningLines([]);
+    setMarkedCells([]);
+    setTimer(15);
     
     toast.success('Game started!');
-    setGameMessage(data.currentTurn === username ? 'Your turn!' : `${data.currentTurn}'s turn`);
+    setGameMessage(`Game started! ${data.currentTurn}'s turn`);
+    
+    // Play start sound
+    if (audioRef.current) {
+      audioRef.current.play().catch(e => console.log('Audio play error:', e));
+    }
   };
   
   const handleTurnChanged = (data) => {
@@ -463,41 +475,44 @@ const GamePage = () => {
     navigate('/');
   };
   
-  // Game action handlers
+  // Handle player ready state changes
+  const handlePlayerReady = ({ username, readyPlayers }) => {
+    setReadyPlayers(readyPlayers);
+    if (username === username) {
+      setIsReady(readyPlayers.includes(username));
+    }
+    toast.success(`${username} is ${readyPlayers.includes(username) ? 'ready' : 'not ready'}`);
+  };
+  
+  // Toggle ready status
+  const handleToggleReady = () => {
+    const newReadyStatus = !isReady;
+    setIsReady(newReadyStatus);
+    socket.emit('toggle-ready', { roomCode, username, isReady: newReadyStatus });
+  };
+  
+  // Start the game (host only)
   const handleStartGame = () => {
-    if (players.length < 1) {
-      toast.error('Need at least one player to start');
+    if (!isHost) return;
+    
+    // Check if enough players are ready
+    if (readyPlayers.length < 1) {
+      toast.error('Not enough players are ready to start the game');
       return;
     }
     
-    console.log('Starting game in room:', roomCode);
     socket.emit('start-game', { roomCode });
   };
   
-  // Timer function
-  const startTimer = () => {
-    // Clear any existing timer
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    
-    // Set initial timer value
-    setTimer(15);
-    
-    // Start new timer
-    timerRef.current = setInterval(() => {
-      setTimer(prev => {
-        // Only decrement if it's still my turn
-        if (currentTurn === socket?.id && prev > 0) {
-          console.log('Timer:', prev - 1, 'Is my turn:', true);
-          return prev - 1;
-        }
-        return prev;
-      });
-    }, 1000);
+  // Copy room code to clipboard
+  const handleCopyRoomCode = () => {
+    navigator.clipboard.writeText(roomCode).then(() => {
+      setCopySuccess(true);
+      toast.success('Room code copied to clipboard!');
+      setTimeout(() => setCopySuccess(false), 2000);
+    });
   };
-
+  
   // Handle marking a number
   const handleMarkNumber = (cellIndex) => {
     if (!socket || !roomCode) return;
@@ -512,108 +527,72 @@ const GamePage = () => {
     socket.emit('mark-number', { roomCode, cellIndex });
   };
   
-  // Handle copying room code to clipboard
-  const copyRoomCode = () => {
-    navigator.clipboard.writeText(roomCode)
-      .then(() => {
-        setCopySuccess(true);
-        toast.success('Room code copied to clipboard!');
-        setTimeout(() => setCopySuccess(false), 2000);
-      })
-      .catch(() => {
-        toast.error('Failed to copy room code');
-      });
-  };
-  
-  // Handle going back to home
-  const goHome = () => {
-    navigate('/');
-  };
-  
-  // Debug function to force grid generation
-  const debugForceGridGeneration = () => {
-    console.log('Forcing grid regeneration');
-    socket.emit('request-grid', { roomCode });
-    
-    // Also log the current grid state
-    console.log('Current grid state:', grid);
-    console.log('Socket ID:', socket.id);
-    console.log('Room code:', roomCode);
-  };
-  
   return (
-    <motion.div
+    <motion.div 
+      className="min-h-screen py-8 px-4 relative overflow-hidden"
+      style={{ backgroundColor: theme.colors.background }}
       variants={pageVariants}
       initial="initial"
       animate="animate"
       exit="exit"
-      className="min-h-screen p-4 sm:p-6 lg:p-8"
-      style={{
-        background: theme.colors.background,
-        backgroundImage: theme.effects?.stars,
-        color: theme.colors.text
-      }}
     >
-      <div className="max-w-7xl mx-auto">
-        <motion.div
+      {/* Confetti animation for winner */}
+      {showConfetti && <Confetti width={window.innerWidth} height={window.innerHeight} />}
+      
+      <div className="max-w-6xl mx-auto">
+        <motion.header 
+          className="flex flex-col md:flex-row justify-between items-center mb-8"
           variants={headerVariants}
-          className="flex justify-between items-center mb-6"
         >
-          <h1 className="text-2xl sm:text-3xl font-bold">
-            Bingo Room: {roomCode}
-          </h1>
-          <ThemeSwitcher />
-        </motion.div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <motion.div
-            variants={containerVariants}
-            className="lg:col-span-2"
-          >
-            <div
-              className="rounded-xl p-4 sm:p-6 backdrop-blur-md bg-opacity-80"
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Bingo Room: {roomCode}</h1>
+            <p className="text-sm opacity-70">
+              {waitingForPlayers 
+                ? `Waiting for players (${readyPlayers.length}/${players.length} ready)` 
+                : gameStarted 
+                  ? currentTurnName 
+                    ? `${currentTurnName}'s turn` 
+                    : "Game in progress" 
+                  : "Game ended"
+              }
+            </p>
+          </div>
+          
+          <div className="flex items-center mt-4 md:mt-0">
+            <button
+              onClick={handleCopyRoomCode}
+              className="px-4 py-2 rounded-full mr-3 text-sm font-medium flex items-center"
               style={{
-                backgroundColor: theme.colors.card,
-                boxShadow: theme.effects?.cardShadow,
-                border: `2px solid ${theme.colors.border}`
+                backgroundColor: copySuccess ? theme.colors.success : theme.colors.primary,
+                color: '#ffffff'
               }}
             >
-              <div className="mb-4 flex justify-between items-center">
-                <div className="flex items-center space-x-4">
-                  <h2 className="text-xl font-semibold">Your Grid</h2>
-                  {isMyTurn && (
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="px-3 py-1 rounded-full text-sm font-medium"
-                      style={{
-                        backgroundColor: theme.colors.primary,
-                        color: theme.colors.card
-                      }}
-                    >
-                      Your Turn!
-                    </motion.div>
-                  )}
-                </div>
-                <Timer timeLeft={timer} />
-              </div>
-
-              <div className="flex justify-center items-center w-full">
-                <div className="w-full max-w-lg">
-                  <BingoGrid
-                    grid={grid}
-                    onCellClick={handleMarkNumber}
-                    markedCells={markedCells}
-                    winningLines={winningLines}
-                  />
-                </div>
-              </div>
-            </div>
+              {copySuccess ? 'Copied!' : 'Copy Room Code'}
+            </button>
+            
+            <ThemeSwitcher className="ml-2" />
+          </div>
+        </motion.header>
+        
+        {gameMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 rounded-lg text-center"
+            style={{
+              backgroundColor: `${theme.colors.accent}33`,
+              color: theme.colors.text
+            }}
+          >
+            {gameMessage}
           </motion.div>
-
+        )}
+        
+        {/* WAITING ROOM SECTION */}
+        {waitingForPlayers && (
           <motion.div
             variants={containerVariants}
-            className="lg:col-span-1"
+            className="grid grid-cols-1 md:grid-cols-2 gap-6"
           >
             <div
               className="rounded-xl p-6 backdrop-blur-md bg-opacity-80"
@@ -624,45 +603,168 @@ const GamePage = () => {
               }}
             >
               <h2 className="text-xl font-semibold mb-4">Players</h2>
-              <PlayersList
-                players={players}
-                currentTurn={currentTurn}
-                winner={winner}
-              />
+              <div className="bg-black bg-opacity-20 rounded-lg p-4 overflow-auto max-h-96">
+                {players.length === 0 ? (
+                  <p className="text-center italic opacity-70">No players yet</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {players.map((player, index) => (
+                      <li 
+                        key={index}
+                        className="p-3 rounded-lg flex items-center justify-between"
+                        style={{
+                          backgroundColor: readyPlayers.includes(player) ? `${theme.colors.success}33` : `${theme.colors.primary}11`,
+                          border: player === username ? `1px solid ${theme.colors.primary}` : 'none'
+                        }}
+                      >
+                        <div className="flex items-center">
+                          <span className="font-medium">{player}</span>
+                          {player === username && <span className="ml-2 text-xs opacity-70">(You)</span>}
+                          {isHost && player === username && <span className="ml-2 text-xs opacity-70">(Host)</span>}
+                        </div>
+                        <div>
+                          {readyPlayers.includes(player) ? (
+                            <span className="px-2 py-1 text-xs rounded-full" style={{ backgroundColor: theme.colors.success, color: '#fff' }}>
+                              Ready
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 text-xs rounded-full" style={{ backgroundColor: `${theme.colors.border}`, color: theme.colors.text }}>
+                              Not Ready
+                            </span>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
-
-            <AnimatePresence>
-              {gameStarted && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="mt-4 p-4 rounded-xl text-center font-medium"
+            
+            <div
+              className="rounded-xl p-6 backdrop-blur-md bg-opacity-80"
+              style={{
+                backgroundColor: theme.colors.card,
+                boxShadow: theme.effects?.cardShadow,
+                border: `2px solid ${theme.colors.border}`
+              }}
+            >
+              <h2 className="text-xl font-semibold mb-4">Game Settings</h2>
+              <div className="mb-6">
+                <p className="mb-2">Room Code: <span className="font-medium">{roomCode}</span></p>
+                <p className="mb-2">Your Username: <span className="font-medium">{username}</span></p>
+                <p className="mb-2">Total Players: <span className="font-medium">{players.length}</span></p>
+                <p className="mb-2">Ready Players: <span className="font-medium">{readyPlayers.length}/{players.length}</span></p>
+              </div>
+              
+              <div className="flex flex-col space-y-3 mt-8">
+                {isHost ? (
+                  <button
+                    onClick={handleStartGame}
+                    disabled={readyPlayers.length < 1}
+                    className="w-full py-3 rounded-lg font-medium disabled:opacity-50"
+                    style={{
+                      backgroundColor: theme.colors.success,
+                      color: '#ffffff'
+                    }}
+                  >
+                    Start Game ({readyPlayers.length}/{players.length} ready)
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleToggleReady}
+                    className="w-full py-3 rounded-lg font-medium"
+                    style={{
+                      backgroundColor: isReady ? theme.colors.success : theme.colors.primary,
+                      color: '#ffffff'
+                    }}
+                  >
+                    {isReady ? 'I\'m Not Ready' : 'I\'m Ready'}
+                  </button>
+                )}
+                
+                <button
+                  onClick={() => navigate('/')}
+                  className="w-full py-2 rounded-lg font-medium"
                   style={{
-                    backgroundColor: theme.colors.accent,
-                    color: theme.colors.card,
-                    boxShadow: theme.effects?.cardShadow
+                    backgroundColor: 'transparent',
+                    color: theme.colors.text,
+                    border: `1px solid ${theme.colors.border}`
                   }}
                 >
-                  {currentTurnName ? `${currentTurnName}'s Turn` : 'Waiting for the host to start the game...'}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {gameMessage && (
+                  Leave Game
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+        
+        {/* GAME SECTION - Only show if waiting room is done */}
+        {!waitingForPlayers && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <motion.div
+              variants={containerVariants}
+              className="lg:col-span-2"
+            >
               <div
-                className="mt-4 p-4 rounded-xl text-center font-medium"
+                className="rounded-xl p-4 sm:p-6 backdrop-blur-md bg-opacity-80"
                 style={{
-                  backgroundColor: theme.colors.primary,
-                  color: theme.colors.card
+                  backgroundColor: theme.colors.card,
+                  boxShadow: theme.effects?.cardShadow,
+                  border: `2px solid ${theme.colors.border}`
                 }}
               >
-                {gameMessage}
+                <div className="mb-4 flex justify-between items-center">
+                  <div className="flex items-center space-x-4">
+                    <h2 className="text-xl font-semibold">Your Grid</h2>
+                    {isMyTurn && (
+                      <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        className="px-3 py-1 rounded-full text-sm font-medium"
+                        style={{
+                          backgroundColor: theme.colors.primary,
+                          color: theme.colors.card
+                        }}
+                      >
+                        Your Turn!
+                      </motion.div>
+                    )}
+                  </div>
+                  <Timer timeLeft={timer} />
+                </div>
+
+                <div className="flex justify-center items-center w-full">
+                  <div className="w-full max-w-lg">
+                    <BingoGrid
+                      grid={grid}
+                      onCellClick={handleMarkNumber}
+                      markedCells={markedCells}
+                      winningLines={winningLines}
+                    />
+                  </div>
+                </div>
               </div>
-            )}
-          </motion.div>
-        </div>
+            </motion.div>
+
+            <motion.div variants={containerVariants}>
+              <div
+                className="rounded-xl p-6 backdrop-blur-md bg-opacity-80"
+                style={{
+                  backgroundColor: theme.colors.card,
+                  boxShadow: theme.effects?.cardShadow,
+                  border: `2px solid ${theme.colors.border}`
+                }}
+              >
+                <h2 className="text-xl font-semibold mb-4">Players</h2>
+                <PlayersList players={players} currentTurn={currentTurn} winner={winner} />
+              </div>
+            </motion.div>
+          </div>
+        )}
       </div>
+      
+      {/* Audio elements */}
+      <audio ref={audioRef} src="/sounds/game-start.mp3" preload="auto" />
     </motion.div>
   );
 };
