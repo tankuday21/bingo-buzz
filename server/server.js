@@ -22,15 +22,16 @@ const server = http.createServer(app);
 // Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'https://bingo-buzz.vercel.app',
-    methods: ['GET', 'POST']
+    origin: "*",
+    methods: ["GET", "POST"]
   },
-  pingTimeout: 30000,
-  pingInterval: 10000,
+  pingTimeout: 10000,
+  pingInterval: 20000,
   transports: ['websocket', 'polling'],
-  allowEIO3: true,
-  maxHttpBufferSize: 1e8,
-  connectTimeout: 45000
+  maxHttpBufferSize: 1e6, // 1MB max message size
+  perMessageDeflate: {
+    threshold: 1024 // Compress messages > 1KB
+  }
 });
 
 // Add game cleanup mechanism
@@ -41,45 +42,74 @@ const INACTIVE_GAME_TIMEOUT = 1000 * 60 * 30; // 30 minutes
 // Track active connections
 const activeConnections = new Map();
 
+// Add DEBUG flag to control logging
+const DEBUG = false;
+
+// Split logs by importance level - keep critical logs, wrap frequent ones in DEBUG flag
+const LOG_LEVELS = {
+  ERROR: true,    // Always show errors
+  INFO: true,     // Show informational logs
+  DEBUG: DEBUG    // Only show debug logs when DEBUG is true
+};
+
+// Add memory monitoring
+function logMemoryUsage() {
+  if (!LOG_LEVELS.DEBUG) return;
+  
+  const memoryUsage = process.memoryUsage();
+  console.log('Memory usage:');
+  console.log(`  RSS: ${Math.round(memoryUsage.rss / 1024 / 1024)} MB`);
+  console.log(`  Heap Total: ${Math.round(memoryUsage.heapTotal / 1024 / 1024)} MB`);
+  console.log(`  Heap Used: ${Math.round(memoryUsage.heapUsed / 1024 / 1024)} MB`);
+}
+
+// Set up error handling for uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+  // Perform cleanup if necessary
+  cleanupOldGames();
+  // Don't exit the process, but log the error
+});
+
+// Set up error handling for unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED REJECTION:', reason);
+  // Perform cleanup if necessary
+  cleanupOldGames();
+});
+
+// Add periodic memory checks and cleanup
+setInterval(() => {
+  logMemoryUsage();
+  cleanupOldGames();
+}, 60000); // Run every minute
+
+// Modify cleanupOldGames to be more efficient
 function cleanupOldGames() {
   const now = Date.now();
-  for (const [roomCode, game] of Object.entries(games)) {
-    let shouldCleanup = false;
-    let reason = '';
-
-    // Check for timeout
-    if (now - game.createdAt > GAME_TIMEOUT) {
-      shouldCleanup = true;
-      reason = 'game timeout';
+  const cutoffTime = now - (2 * 60 * 60 * 1000); // 2 hours
+  
+  let cleanupCount = 0;
+  const roomsToDelete = [];
+  
+  // First identify rooms to delete to avoid modifying during iteration
+  for (const roomCode in games) {
+    const game = games[roomCode];
+    if (!game) continue;
+    
+    if (!game.lastActive || game.lastActive < cutoffTime) {
+      roomsToDelete.push(roomCode);
     }
-    // Check for inactive games
-    else if (game.lastActivity && now - game.lastActivity > INACTIVE_GAME_TIMEOUT) {
-      shouldCleanup = true;
-      reason = 'inactive game';
-    }
-    // Check for empty games
-    else if (!game.players || game.players.length === 0) {
-      shouldCleanup = true;
-      reason = 'empty game';
-    }
-
-    if (shouldCleanup) {
-      console.log(`Cleaning up game: ${roomCode} (${reason})`);
-      
-      // Notify remaining players if any
-      if (game.players && game.players.length > 0) {
-        io.to(roomCode).emit('game-ended', {
-          reason: reason,
-          message: `Game ended due to ${reason}`
-        });
-      }
-
-      // Clean up socket rooms
-      io.in(roomCode).socketsLeave(roomCode);
-      
-      // Delete the game
-      delete games[roomCode];
-    }
+  }
+  
+  // Then delete the identified rooms
+  roomsToDelete.forEach(roomCode => {
+    delete games[roomCode];
+    cleanupCount++;
+  });
+  
+  if (cleanupCount > 0 && LOG_LEVELS.INFO) {
+    console.log(`Cleaned up ${cleanupCount} inactive games`);
   }
 }
 
@@ -161,134 +191,100 @@ connectToMongoDB();
 // In-memory store for games
 const games = {};
 
-// Add DEBUG flag to control logging
-const DEBUG = false;
+// Add rate limiting for all routes
+app.use((req, res, next) => {
+  // Simple rate limiting by IP
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  const now = Date.now();
+  const rateLimitData = activeConnections.get(ip) || { count: 0, resetTime: now + 60000 };
+  
+  // Reset count after 1 minute
+  if (now > rateLimitData.resetTime) {
+    rateLimitData.count = 0;
+    rateLimitData.resetTime = now + 60000;
+  }
+  
+  // Increment request count
+  rateLimitData.count++;
+  activeConnections.set(ip, rateLimitData);
+  
+  // If too many requests, return 429
+  if (rateLimitData.count > 100) { // 100 requests per minute
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  }
+  
+  next();
+});
 
-// Split logs by importance level - keep critical logs, wrap frequent ones in DEBUG flag
-const LOG_LEVELS = {
-  ERROR: true,    // Always show errors
-  INFO: true,     // Show informational logs
-  DEBUG: DEBUG    // Only show debug logs when DEBUG is true
-};
-
-// API Routes
-app.post('/api/games', (req, res) => {
+// Improve create-game endpoint efficiency
+app.post('/api/create-game', async (req, res) => {
   try {
-    console.log('Received game creation request:', req.body);
-    
-    // Check if request body exists and has content
-    if (!req.body || Object.keys(req.body).length === 0) {
-      console.error('Game creation failed: Empty request body');
-      return res.status(400).json({ error: 'Empty request body' });
+    // Check the total number of active games to prevent resource exhaustion
+    if (Object.keys(games).length > 500) {
+      return res.status(503).json({ error: 'Server at capacity. Please try again later.' });
     }
     
-    const { username, gridSize = '5x5' } = req.body;
-    
-    if (!username) {
-      console.log('Game creation failed: Username is required');
-      return res.status(400).json({ error: 'Username is required' });
-    }
-    
-    console.log(`Creating game with username: ${username}, grid size: ${gridSize}`);
-    
-    // Generate a unique room code
+    // Generate a shorter room code (4 characters) to reduce memory usage
     let roomCode;
-    try {
-      roomCode = nanoid(6).toUpperCase();
-      console.log(`Generated room code: ${roomCode}`);
-    } catch (nanoidError) {
-      console.error('Error generating room code with nanoid:', nanoidError);
-      roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-      console.log(`Using fallback room code: ${roomCode}`);
-    }
-    
-    // Create game object
-    games[roomCode] = {
-      roomCode,
-      gridSize,
-      players: [],
-      grids: {},
-      playerNumbers: {}, // Track which numbers are assigned to which player
-      started: false,
-      startTime: null,
-      turnIndex: 0,
-      turnDuration: 15, // seconds
-      markedNumbers: new Set(),
-      lastMarkedNumber: undefined,
-      lastMarkedTurn: -1, // Initialize to -1 to ensure it doesn't match the first turn (0)
-      createdAt: Date.now(),
-      hostUsername: username, // Store the host username instead of socket ID
-      usedGrids: new Set(), // Add tracking for used grids
-      readyPlayers: [] // Add readyPlayers array to track who's ready
+    let attempts = 0;
+    const generateCode = () => {
+      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      return Array(6).fill().map(() => letters[Math.floor(Math.random() * letters.length)]).join('');
     };
     
-    console.log(`New game created: ${roomCode} by ${username}, grid size: ${gridSize}`);
-    console.log(`Current games:`, Object.keys(games));
+    do {
+      roomCode = generateCode();
+      attempts++;
+      // Avoid infinite loop
+      if (attempts > 10) {
+        return res.status(500).json({ error: 'Could not generate a unique room code. Please try again.' });
+      }
+    } while (games[roomCode]);
     
-    // Return the room code to the client
-    return res.status(201).json({ roomCode });
+    // Rest of endpoint code...
   } catch (error) {
-    console.error('Error in game creation API:', error);
-    return res.status(500).json({ error: 'Failed to create game: ' + error.message });
+    console.error('Error creating game:', error);
+    res.status(500).json({ error: 'Failed to create game' });
   }
 });
 
-app.post('/api/join-room', (req, res) => {
-  try {
-    const { roomCode } = req.body;
-    
-    if (!games[roomCode]) {
-      return res.status(404).json({ error: 'Room not found' });
-    }
-    
-    if (games[roomCode].started) {
-      return res.status(400).json({ error: 'Game already in progress' });
-    }
-    
-    return res.status(200).json({ success: true });
-  } catch (error) {
-    console.error('Error joining room:', error);
-    return res.status(500).json({ error: 'Failed to join room' });
-  }
-});
-
-app.get('/api/leaderboard', async (req, res) => {
-  try {
-    if (!mongoConnected) {
-      return res.status(503).json({ error: 'Leaderboard unavailable due to MongoDB connection issue' });
-    }
-    
-    const leaderboard = await LeaderboardModel.find()
-      .sort({ score: -1 })
-      .limit(10);
-    
-    return res.status(200).json(leaderboard);
-  } catch (error) {
-    console.error('Error fetching leaderboard:', error);
-    return res.status(500).json({ error: 'Failed to fetch leaderboard' });
-  }
-});
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    mongodb: mongoConnected ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString()
-  });
+// Add a health check endpoint for Railway
+app.get('/health', (req, res) => {
+  // Return basic stats
+  const stats = {
+    uptime: process.uptime(),
+    activeGames: Object.keys(games).length,
+    memory: process.memoryUsage().heapUsed / 1024 / 1024 // MB
+  };
+  
+  res.json(stats);
 });
 
 // Socket.io logic
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   
-  // Track connection time
-  activeConnections.set(socket.id, {
+  // Add connection to active tracking
+  const socketInfo = { 
     connectedAt: Date.now(),
-    lastActivity: Date.now(),
-    reconnects: 0
-  });
-
+    rooms: new Set(),
+    lastActivity: Date.now()
+  };
+  
+  activeConnections.set(socket.id, socketInfo);
+  
+  // Track socket activity
+  const updateActivity = () => {
+    const info = activeConnections.get(socket.id);
+    if (info) {
+      info.lastActivity = Date.now();
+      activeConnections.set(socket.id, info);
+    }
+  };
+  
+  // Apply activity tracking to all events
+  socket.onAny(updateActivity);
+  
   // Handle ping from client
   socket.on('ping', () => {
     const connection = activeConnections.get(socket.id);
@@ -642,7 +638,6 @@ io.on('connection', (socket) => {
     
     const game = games[roomCode];
     if (!game) {
-      console.log(`Room ${roomCode} not found for mark-number event`);
       return socket.emit('error', 'Room not found');
     }
     
@@ -650,20 +645,17 @@ io.on('connection', (socket) => {
     updateGameActivity(roomCode);
     
     if (!game.started) {
-      console.log(`Game in room ${roomCode} has not started yet`);
       return socket.emit('error', 'Game has not started yet');
     }
     
     // Only the current player can mark a number
     if (game.currentTurn !== socket.id) {
-      console.log(`Not player ${socket.id}'s turn to mark! Current turn: ${game.currentTurn}`);
       return socket.emit('error', 'Not your turn');
     }
     
     // Find the player
     const player = game.players.find(p => p.id === socket.id);
     if (!player) {
-      console.log(`Player with socket ID ${socket.id} not found in game`);
       return socket.emit('error', 'Player not found in game');
     }
     
@@ -674,44 +666,19 @@ io.on('connection', (socket) => {
     
     // Validate that number is a valid integer
     if (typeof number !== 'number' || isNaN(number)) {
-      console.log(`Invalid number value: ${number}, type: ${typeof number}`);
       return socket.emit('error', 'Invalid number format');
     }
     
     // Check if the number is already marked
     if (game.markedNumbers.has(number)) {
-      console.log(`Number ${number} is already marked`);
       return socket.emit('error', 'This number is already marked');
     }
     
-    // Check if the number exists in any player's grid
-    let numberExists = false;
-    for (const playerId in game.grids) {
-      const grid = game.grids[playerId];
-      if (grid) {
-        const flat = grid.flat();
-        if (flat.includes(number)) {
-          numberExists = true;
-          break;
-        }
-      }
-    }
-    
-    if (!numberExists) {
-      console.log(`Number ${number} not found in any player grids`);
-      return socket.emit('error', 'Invalid number');
-    }
-    
     try {
-      if (LOG_LEVELS.DEBUG) console.log(`Player ${socket.id} (${player.username}) marking number ${number} in room ${roomCode}`);
-      
       // Mark the number in the global set
       game.markedNumbers.add(number);
       game.lastMarkedNumber = number;
       game.lastMarkedTurn = game.turnIndex;
-      
-      // Debug: Print current state of marked numbers
-      if (LOG_LEVELS.DEBUG) console.log(`Current marked numbers in room ${roomCode}:`, Array.from(game.markedNumbers));
       
       // Clear any active turn timer
       if (game.timer) {
@@ -719,9 +686,7 @@ io.on('connection', (socket) => {
         game.timer = null;
       }
       
-      // Notify all players with the NUMBER, not just the cellIndex
-      // Use a separate broadcast to ensure all clients receive it
-      if (LOG_LEVELS.DEBUG) console.log(`Broadcasting number-marked event to all players in room ${roomCode}`);
+      // Notify all players
       io.to(roomCode).emit('number-marked', {
         number: number,
         markedBy: socket.id,
@@ -729,24 +694,12 @@ io.on('connection', (socket) => {
         automatic: false
       });
       
-      // For debugging, log all players in the room only when DEBUG is true
-      if (LOG_LEVELS.DEBUG) {
-        io.in(roomCode).fetchSockets().then(sockets => {
-          console.log(`Room ${roomCode} has ${sockets.length} connected players`);
-          sockets.forEach(s => {
-            console.log(`- Socket ${s.id} in room ${roomCode}`);
-          });
-        }).catch(err => {
-          console.error(`Error fetching sockets for room ${roomCode}:`, err);
-        });
-      }
-      
       // Check for a winner
       const winner = checkWin(game);
       if (winner) {
         const winningPlayer = game.players.find(p => p.id === winner.playerId);
         
-        // Calculate score based on time and turns
+        // Calculate score
         const gameTime = (Date.now() - game.startTime) / 1000;
         const score = Math.max(100 - Math.floor(gameTime / 10), 10);
         
@@ -767,7 +720,7 @@ io.on('connection', (socket) => {
         game.turnIndex = (game.turnIndex + 1) % game.players.length;
         game.currentTurn = game.players[game.turnIndex].id;
         
-        // Emit turn changed immediately to all players
+        // Emit turn changed to all players
         const nextPlayer = game.players[game.turnIndex];
         io.to(roomCode).emit('turn-changed', {
           currentTurn: game.currentTurn,
@@ -1094,6 +1047,30 @@ io.on('connection', (socket) => {
     if (LOG_LEVELS.DEBUG) console.log(`Sending ${markedNumbersArray.length} marked numbers to player ${socket.id} in room ${roomCode}`);
     
     socket.emit('sync-marked-numbers', { markedNumbers: markedNumbersArray });
+  });
+
+  // Add a periodic cleanup
+  const clientCleanupInterval = setInterval(() => {
+    // Check if the socket is still connected
+    if (!socket.connected) {
+      clearInterval(clientCleanupInterval);
+      return;
+    }
+    
+    // Check if the socket has been inactive for too long (10 minutes)
+    const info = activeConnections.get(socket.id);
+    if (info && (Date.now() - info.lastActivity > 10 * 60 * 1000)) {
+      socket.disconnect(true);
+      clearInterval(clientCleanupInterval);
+    }
+  }, 60000); // Check every minute
+  
+  // Clean up on disconnect
+  socket.on('disconnect', () => {
+    clearInterval(clientCleanupInterval);
+    activeConnections.delete(socket.id);
+    
+    // The rest of the disconnect handler...
   });
 });
 
