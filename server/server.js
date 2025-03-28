@@ -627,8 +627,8 @@ io.on('connection', (socket) => {
   });
   
   // Handle marking a number
-  socket.on('mark-number', ({ roomCode, number }) => {
-    console.log(`Player ${socket.id} attempting to mark number ${number} in room ${roomCode}`);
+  socket.on('mark-number', ({ roomCode, number, cellIndex }) => {
+    console.log(`Player ${socket.id} attempting to mark number ${number} (cellIndex: ${cellIndex}) in room ${roomCode}`);
     const game = games[roomCode];
     
     if (!game) {
@@ -640,7 +640,39 @@ io.on('connection', (socket) => {
     }
     
     if (socket.id !== game.currentTurn) {
+      console.log(`Not ${socket.id}'s turn to mark. Current turn is ${game.currentTurn}`);
       return socket.emit('error', 'Not your turn');
+    }
+    
+    // Find the player
+    const player = game.players.find(p => p.id === socket.id);
+    if (!player) {
+      console.log(`Player with socket ID ${socket.id} not found in game`);
+      return socket.emit('error', 'Player not found in game');
+    }
+    
+    // Convert to number if it's a string
+    if (typeof number === 'string') {
+      number = parseInt(number, 10);
+    }
+    
+    // Validate that number is a valid integer
+    if (typeof number !== 'number' || isNaN(number)) {
+      console.log(`Invalid number value: ${number}, type: ${typeof number}`);
+      
+      // If we have a cellIndex, try to get the number from the grid
+      if (cellIndex !== undefined && game.grids[socket.id]) {
+        // Try to get the number from a flat grid
+        const flatGrid = game.grids[socket.id].flat();
+        if (flatGrid && cellIndex >= 0 && cellIndex < flatGrid.length) {
+          number = flatGrid[cellIndex];
+          console.log(`Recovered number ${number} from cellIndex ${cellIndex}`);
+        } else {
+          return socket.emit('error', 'Invalid cell index');
+        }
+      } else {
+        return socket.emit('error', 'Invalid number format');
+      }
     }
     
     // Check if the number is already marked
@@ -652,13 +684,18 @@ io.on('connection', (socket) => {
     let numberExists = false;
     for (const playerId in game.grids) {
       const playerGrid = game.grids[playerId];
-      if (playerGrid && playerGrid.some(row => row.includes(number))) {
-        numberExists = true;
-        break;
+      if (playerGrid) {
+        const flatGrid = playerGrid.flat();
+        if (flatGrid.includes(number)) {
+          numberExists = true;
+          break;
+        }
       }
     }
     
     if (!numberExists) {
+      console.log(`Number ${number} not found in any player grids`);
+      console.log('Available numbers in this player grid:', game.grids[socket.id].flat());
       return socket.emit('error', 'Invalid number');
     }
     
@@ -668,15 +705,12 @@ io.on('connection', (socket) => {
       game.timer = null;
     }
     
-    console.log(`Player ${socket.id} marked number ${number} in room ${roomCode}`);
+    console.log(`Player ${socket.id} (${player.username}) marked number ${number} in room ${roomCode}`);
     
     // Mark the number
     game.markedNumbers.add(number);
     game.lastMarkedNumber = number;
     game.lastMarkedTurn = game.turnIndex;
-    
-    // Find the player who marked the number
-    const player = game.players.find(p => p.id === socket.id);
     
     // Notify all players
     io.to(roomCode).emit('number-marked', {

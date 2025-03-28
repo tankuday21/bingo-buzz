@@ -550,17 +550,36 @@ const GamePage = () => {
   };
   
   // Handle marking a number
-  const handleMarkNumber = (cellIndex) => {
-    if (!socket || !roomCode) return;
-    
-    // Only allow marking if it's my turn
-    if (currentTurn !== socket.id) {
-      toast.error("It's not your turn!");
+  const handleMarkNumber = (cellIndex, number) => {
+    if (!gameStarted || !isMyTurn || markedCells.includes(cellIndex) || winner) {
+      console.log('Cannot mark number:', { gameStarted, isMyTurn, alreadyMarked: markedCells.includes(cellIndex), winner });
       return;
     }
     
-    console.log('Marking number:', cellIndex);
-    socket.emit('mark-number', { roomCode, cellIndex });
+    console.log(`Marking cell: index ${cellIndex}, number ${number}`);
+    
+    // If number wasn't provided as a parameter, try to get it from the grid
+    if (number === undefined && Array.isArray(grid)) {
+      // Handle flat grid (1D array)
+      if (!Array.isArray(grid[0])) {
+        number = grid[cellIndex];
+      } 
+      // Handle 2D grid
+      else {
+        const flatGrid = grid.flat();
+        number = flatGrid[cellIndex];
+      }
+    }
+    
+    if (!number) {
+      console.error('Could not find number at cell index:', cellIndex, 'Grid:', grid);
+      toast.error('Error: Could not find number');
+      return;
+    }
+    
+    // Send both the number and cellIndex to the server
+    console.log(`Sending mark-number: ${number} (cell index ${cellIndex})`);
+    socket.emit('mark-number', { roomCode, number, cellIndex });
   };
   
   return (
@@ -779,7 +798,12 @@ const GamePage = () => {
                       </motion.div>
                     )}
                   </div>
-                  <Timer timeLeft={timer} />
+                  
+                  {gameStarted && 
+                    <div className="w-32">
+                      <Timer timeLeft={timer} />
+                    </div>
+                  }
                 </div>
 
                 <div className="flex justify-center items-center w-full">

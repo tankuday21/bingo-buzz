@@ -91,6 +91,14 @@ const BingoGrid = ({
     return baseStyle;
   };
 
+  const handleCellClick = (number, index) => {
+    console.log(`Cell clicked: number ${number}, index ${index}`);
+    if (typeof onCellClick === 'function') {
+      // Pass both the number and the cell index to the parent component
+      onCellClick(index, number);
+    }
+  };
+
   if (!grid || grid.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -99,7 +107,8 @@ const BingoGrid = ({
     );
   }
 
-  const flatGrid = grid.flat();
+  // Create a flat version of the grid for easier handling
+  const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
 
   return (
     <motion.div
@@ -122,10 +131,12 @@ const BingoGrid = ({
           <motion.button
             key={index}
             variants={cellVariants}
-            onClick={() => onCellClick(index)}
+            onClick={() => handleCellClick(number, index)}
             style={getCellStyle(index)}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
+            data-number={number}
+            data-index={index}
           >
             {number}
           </motion.button>
