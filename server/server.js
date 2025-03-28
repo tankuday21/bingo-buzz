@@ -24,7 +24,10 @@ const io = new Server(server, {
   cors: {
     origin: process.env.CLIENT_URL || 'https://bingo-buzz.vercel.app',
     methods: ['GET', 'POST']
-  }
+  },
+  pingTimeout: 30000,
+  pingInterval: 10000,
+  transports: ['websocket', 'polling']
 });
 
 // Add game cleanup mechanism
@@ -260,8 +263,87 @@ app.get('/api/health', (req, res) => {
 
 // Socket.io logic
 io.on('connection', (socket) => {
-  console.log('New client connected:', socket.id);
-  
+  console.log('Client connected:', socket.id);
+
+  // Handle ping from client
+  socket.on('ping', () => {
+    socket.emit('pong');
+  });
+
+  // Handle disconnection
+  socket.on('disconnect', (reason) => {
+    console.log('Client disconnected:', socket.id, 'Reason:', reason);
+    
+    // Find and handle player disconnection from any active games
+    for (const [roomCode, game] of Object.entries(games)) {
+      const playerIndex = game.players.findIndex(p => p.socketId === socket.id);
+      if (playerIndex !== -1) {
+        const player = game.players[playerIndex];
+        console.log(`Player ${player.username} disconnected from room ${roomCode}`);
+        
+        // Notify other players
+        socket.to(roomCode).emit('player-disconnected', {
+          username: player.username,
+          temporary: reason === 'transport close' || reason === 'ping timeout'
+        });
+        
+        // If it's a temporary disconnection, keep the player in the game
+        if (reason === 'transport close' || reason === 'ping timeout') {
+          player.connected = false;
+          player.lastDisconnect = Date.now();
+        } else {
+          // Remove player for permanent disconnections
+          game.players.splice(playerIndex, 1);
+          
+          // If no players left, schedule game for cleanup
+          if (game.players.length === 0) {
+            game.lastActivity = Date.now() - INACTIVE_GAME_TIMEOUT;
+          }
+        }
+        
+        // Update game state
+        updateGameActivity(roomCode);
+      }
+    }
+  });
+
+  // Handle reconnection
+  socket.on('rejoin-room', async ({ roomCode, username }) => {
+    console.log(`Player ${username} attempting to rejoin room ${roomCode}`);
+    
+    const game = games[roomCode];
+    if (!game) {
+      socket.emit('rejoin-error', { message: 'Game not found' });
+      return;
+    }
+    
+    const existingPlayer = game.players.find(p => p.username === username && !p.connected);
+    if (existingPlayer) {
+      existingPlayer.connected = true;
+      existingPlayer.socketId = socket.id;
+      delete existingPlayer.lastDisconnect;
+      
+      // Join the socket room
+      socket.join(roomCode);
+      
+      // Send current game state
+      socket.emit('game-state', {
+        players: game.players,
+        grid: game.grids[username],
+        currentTurn: game.players[game.turnIndex]?.username,
+        markedNumbers: Array.from(game.markedNumbers),
+        lastMarkedNumber: game.lastMarkedNumber
+      });
+      
+      // Notify other players
+      socket.to(roomCode).emit('player-reconnected', { username });
+      
+      console.log(`Player ${username} successfully rejoined room ${roomCode}`);
+    } else {
+      socket.emit('rejoin-error', { message: 'Player not found in game' });
+    }
+  });
+
   // Handle player joining a room
   socket.on('join-room', ({ roomCode, username }) => {
     console.log(`Player ${username} (${socket.id}) joining room ${roomCode}`);
@@ -688,42 +770,6 @@ io.on('connection', (socket) => {
       
       console.log(`Generated and sending new grid to player ${socket.id}:`, JSON.stringify(newGrid));
       socket.emit('grid-assigned', newGrid);
-    }
-  });
-  
-  // Handle player disconnection
-  socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
-    
-    const roomCode = socket.data.roomCode;
-    if (roomCode && games[roomCode]) {
-      const game = games[roomCode];
-      
-      // Remove player from the game
-      game.players = game.players.filter(player => player.id !== socket.id);
-      
-      // Clean up player's grid
-      delete game.grids[socket.id];
-      
-      // If it was this player's turn, move to the next player
-      if (game.currentTurn === socket.id) {
-        clearTimeout(game.timer);
-        
-        if (game.players.length > 0) {
-          nextTurn(roomCode);
-        }
-      }
-      
-      // If no players left, clean up the game
-      if (game.players.length === 0) {
-        delete games[roomCode];
-      } else {
-        // Notify remaining players
-        io.to(roomCode).emit('player-left', {
-          players: game.players,
-          disconnectedId: socket.id
-        });
-      }
     }
   });
 });

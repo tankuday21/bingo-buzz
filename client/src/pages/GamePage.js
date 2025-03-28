@@ -150,34 +150,71 @@ const GamePage = () => {
   
   // Handle socket disconnection
   useEffect(() => {
-    const handleDisconnect = () => {
-      console.log('Socket disconnected');
-      toast.error('Connection lost. Please refresh the page.');
-      // Clear timer and reset game state
+    const handleDisconnect = (reason) => {
+      console.log('Socket disconnected:', reason);
+      toast.error('Connection lost. Attempting to reconnect...');
+      // Clear timer and pause game state
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
       }
       setTimer(15);
-      setGameStarted(false);
       setIsMyTurn(false);
     };
 
-    const handleReconnect = () => {
-      console.log('Socket reconnected');
+    const handleReconnect = (attemptNumber) => {
+      console.log('Socket reconnected after', attemptNumber, 'attempts');
       toast.success('Connection restored');
-      // Rejoin the room if we were in one
+      // Attempt to rejoin the game
       if (roomCode && username) {
-        socket.emit('join-room', { roomCode, username });
+        console.log('Attempting to rejoin game:', roomCode);
+        socket.emit('rejoin-room', { roomCode, username });
       }
     };
 
+    const handleReconnectError = (error) => {
+      console.error('Reconnection error:', error);
+      toast.error('Failed to reconnect. Please refresh the page.');
+    };
+
+    const handleGameState = (state) => {
+      console.log('Received game state:', state);
+      setPlayers(state.players);
+      setGrid(state.grid);
+      setMarked(new Set(state.markedNumbers));
+      setCurrentTurnName(state.currentTurn);
+      setIsMyTurn(state.currentTurn === username);
+      if (state.lastMarkedNumber) {
+        setMarkedHistory(prev => [...prev, state.lastMarkedNumber]);
+      }
+    };
+
+    const handlePlayerDisconnected = ({ username: disconnectedUser, temporary }) => {
+      console.log('Player disconnected:', disconnectedUser, temporary);
+      toast.error(`${disconnectedUser} ${temporary ? 'lost connection' : 'left the game'}`);
+    };
+
+    const handlePlayerReconnected = ({ username: reconnectedUser }) => {
+      console.log('Player reconnected:', reconnectedUser);
+      toast.success(`${reconnectedUser} reconnected to the game`);
+    };
+
+    // Add event listeners
     socket.on('disconnect', handleDisconnect);
     socket.on('reconnect', handleReconnect);
+    socket.on('reconnect_error', handleReconnectError);
+    socket.on('game-state', handleGameState);
+    socket.on('player-disconnected', handlePlayerDisconnected);
+    socket.on('player-reconnected', handlePlayerReconnected);
 
+    // Cleanup
     return () => {
       socket.off('disconnect', handleDisconnect);
       socket.off('reconnect', handleReconnect);
+      socket.off('reconnect_error', handleReconnectError);
+      socket.off('game-state', handleGameState);
+      socket.off('player-disconnected', handlePlayerDisconnected);
+      socket.off('player-reconnected', handlePlayerReconnected);
     };
   }, [roomCode, username]);
   
