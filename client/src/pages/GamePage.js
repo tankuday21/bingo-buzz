@@ -44,6 +44,7 @@ const GamePage = () => {
   const timerIntervalRef = useRef(null);
   const audioRef = useRef(null);
   const hasJoinedRef = useRef(false);
+  const timerRef = useRef(null);
   
   // Join game on mount
   useEffect(() => {
@@ -369,38 +370,45 @@ const GamePage = () => {
     toast.success('Game started!');
   };
   
-  const handleTurnStarted = ({ playerId, player }) => {
-    console.log('Turn started for player:', playerId, 'Current socket ID:', socket.id);
-    
-    // Update turn info
-    setCurrentTurn(playerId);
-    setIsMarking(false); // Reset marking state when a new turn starts
-    const isPlayerTurn = playerId === socket.id;
-    setIsMyTurn(isPlayerTurn);
-    
-    // Find the player name for display
-    const playerName = player?.username || 
-      players.find(p => p.id === playerId)?.username || 
-      'Unknown';
-    
-    setCurrentTurnName(playerName);
-    
-    // Reset the timer
-    setTimer(15);
-    
-    // Clear any existing timer
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-    
-    // Show toast for whose turn it is
-    if (isPlayerTurn) {
-      toast.success('It\'s your turn!');
-    } else {
-      toast(`It's ${playerName}'s turn`);
-    }
-  };
+  // Handle turn started event
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleTurnStarted = (data) => {
+      console.log('Turn started for player:', data.playerId, 'Current socket ID:', socket.id);
+      
+      // Clear any existing timer
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      
+      // Reset timer state
+      setTimer(15);
+      
+      // Update whose turn it is
+      setCurrentTurn(data.playerId);
+      
+      // Start timer if it's my turn
+      if (data.playerId === socket.id) {
+        console.log('Starting timer for my turn');
+        startTimer();
+      } else {
+        console.log('Not my turn, clearing timer');
+      }
+    };
+
+    socket.on('turn-started', handleTurnStarted);
+
+    return () => {
+      socket.off('turn-started', handleTurnStarted);
+      // Clear timer on cleanup
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [socket]);
   
   const handleNumberMarked = ({ number, markedBy, player, automatic }) => {
     console.log('Number marked:', number, 'by player:', player?.username || markedBy);
@@ -463,47 +471,42 @@ const GamePage = () => {
     socket.emit('start-game', { roomCode });
   };
   
+  // Timer function
+  const startTimer = () => {
+    // Clear any existing timer
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    // Set initial timer value
+    setTimer(15);
+    
+    // Start new timer
+    timerRef.current = setInterval(() => {
+      setTimer(prev => {
+        // Only decrement if it's still my turn
+        if (currentTurn === socket?.id && prev > 0) {
+          console.log('Timer:', prev - 1, 'Is my turn:', true);
+          return prev - 1;
+        }
+        return prev;
+      });
+    }, 1000);
+  };
+
+  // Handle marking a number
   const handleMarkNumber = (number) => {
-    if (!gameStarted) {
-      toast.error('Game has not started yet');
-      return;
-    }
+    if (!socket || !roomCode) return;
     
-    if (!isMyTurn) {
-      toast.error('Not your turn');
-      return;
-    }
-    
-    if (marked.has(number)) {
-      toast.error('This number is already marked');
-      return;
-    }
-    
-    if (isMarking) {
-      toast.error('You are already marking a number');
-      return;
-    }
-    
-    // Check if the number exists in the grid
-    const numberExists = grid.some(row => row.includes(number));
-    if (!numberExists) {
-      toast.error('Invalid number');
+    // Only allow marking if it's my turn
+    if (currentTurn !== socket.id) {
+      toast.error("It's not your turn!");
       return;
     }
     
     console.log('Marking number:', number);
-    try {
-      // Send mark-number event to server
-      setIsMarking(true);
-      socket.emit('mark-number', { roomCode, number });
-      // Add visual feedback
-      toast.success(`You marked number ${number}`);
-    } catch (error) {
-      console.error('Error marking number:', error);
-      toast.error('Failed to mark number. Please try again.');
-    } finally {
-      setIsMarking(false);
-    }
+    socket.emit('mark-number', { roomCode, number });
   };
   
   // Handle copying room code to clipboard

@@ -580,12 +580,6 @@ io.on('connection', (socket) => {
       return socket.emit('error', 'Not your turn');
     }
     
-    // Check if the player already marked a number during this turn
-    if (game.lastMarkedTurn === game.turnIndex && game.lastMarkedNumber !== undefined) {
-      console.log(`Player ${socket.id} already marked number ${game.lastMarkedNumber} during this turn`);
-      return socket.emit('error', 'You already marked a number during this turn');
-    }
-    
     // Check if the number is already marked
     if (game.markedNumbers.has(number)) {
       return socket.emit('error', 'This number is already marked');
@@ -606,14 +600,15 @@ io.on('connection', (socket) => {
     }
     
     // Clear the turn timer
-    clearTimeout(game.timer);
+    if (game.timer) {
+      clearTimeout(game.timer);
+      game.timer = null;
+    }
     
     console.log(`Player ${socket.id} marked number ${number} in room ${roomCode}`);
     
     // Mark the number
     game.markedNumbers.add(number);
-    
-    // Update last marked info for tracking
     game.lastMarkedNumber = number;
     game.lastMarkedTurn = game.turnIndex;
     
@@ -655,7 +650,10 @@ io.on('connection', (socket) => {
     } else {
       // Move to next turn
       game.turnIndex = (game.turnIndex + 1) % game.players.length;
-      nextTurn(roomCode);
+      game.currentTurn = game.players[game.turnIndex].id;
+      
+      // Start the next turn
+      startTurn(roomCode);
     }
   });
   
@@ -827,12 +825,13 @@ function startTurn(roomCode) {
   }
   
   // Find the current player based on turnIndex
-  const currentPlayer = game.players[game.turnIndex % game.players.length];
+  const currentPlayer = game.players[game.turnIndex];
   if (!currentPlayer) {
     console.error(`Current player not found for turn index ${game.turnIndex} in room ${roomCode}`);
     return;
   }
   
+  // Set current turn
   game.currentTurn = currentPlayer.id;
   
   console.log(`Starting turn for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}, turn index: ${game.turnIndex}`);
@@ -843,9 +842,20 @@ function startTurn(roomCode) {
     player: currentPlayer
   });
   
+  // Clear any existing timer
+  if (game.timer) {
+    clearTimeout(game.timer);
+    game.timer = null;
+  }
+  
   // Set a timer for this turn (15 seconds)
-  clearTimeout(game.timer); // Clear any existing timer
   game.timer = setTimeout(() => {
+    // Only proceed if it's still this player's turn
+    if (game.currentTurn !== currentPlayer.id) {
+      console.log(`Timer expired but turn already changed for ${currentPlayer.username} in room ${roomCode}`);
+      return;
+    }
+    
     console.log(`Timer expired for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}`);
     
     // Get unmarked numbers from the current player's grid only
@@ -892,15 +902,17 @@ function startTurn(roomCode) {
           lines: winner.lines,
           score
         });
-      } else {
-        // Move to next turn
-        game.turnIndex = (game.turnIndex + 1) % game.players.length;
-        nextTurn(roomCode);
+        
+        // End the game
+        game.started = false;
       }
-    } else {
-      // Move to next turn even if no numbers to mark
+    }
+    
+    // Move to next turn (whether we marked a number or not)
+    if (game.started) {
       game.turnIndex = (game.turnIndex + 1) % game.players.length;
-      nextTurn(roomCode);
+      game.currentTurn = game.players[game.turnIndex].id;
+      startTurn(roomCode);
     }
   }, 15000);
 }
