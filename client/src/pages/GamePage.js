@@ -266,31 +266,18 @@ const GamePage = () => {
     // Set isHost status
     setIsHost(data.isHost);
     
-    // Set the grid
-    if (data.grid) {
-      console.log('Setting grid from joined-room event. Grid data:', JSON.stringify(data.grid));
-      if (!Array.isArray(data.grid) || data.grid.length === 0) {
-        console.error('Invalid grid data in joined-room event');
-      } else {
-        console.log('Grid dimensions:', data.grid.length, 'x', data.grid[0].length);
-        setGrid(data.grid);
-      }
-    } else {
-      console.warn('No grid data in joined-room event');
+    // Set the grid if provided and valid
+    if (data.grid && Array.isArray(data.grid) && data.grid.length > 0) {
+      console.log('Setting grid from joined-room event:', data.grid);
+      setGrid(data.grid);
     }
     
     // Validate and set players
-    if (data.players) {
-      if (Array.isArray(data.players)) {
-        console.log('Setting players from joined-room event:', data.players);
-        setPlayers(data.players);
-      } else {
-        console.error('Invalid players data received in joined-room:', data.players);
-        // Initialize with empty array as fallback
-        setPlayers([]);
-      }
+    if (Array.isArray(data.players)) {
+      console.log('Setting players from joined-room event:', data.players);
+      setPlayers(data.players);
     } else {
-      // Initialize with empty array if players not provided
+      console.error('Invalid players data received in joined-room:', data.players);
       setPlayers([]);
     }
   };
@@ -353,17 +340,23 @@ const GamePage = () => {
   const handleGameStarted = (data) => {
     console.log('Game started event data:', data);
     
-    // Update players
-    const updatedPlayers = data.players;
-    if (updatedPlayers && Array.isArray(updatedPlayers)) {
-      setPlayers(updatedPlayers);
+    // Update players if provided
+    if (Array.isArray(data.players)) {
+      setPlayers(data.players);
     }
     
     // Update current turn
     setCurrentTurn(data.currentTurn);
+    setIsMyTurn(data.currentTurn === socket.id);
     
     // Set game as started
     setGameStarted(true);
+    
+    // If we don't have a grid yet, request one
+    if (!grid || grid.length === 0) {
+      console.log('No grid found at game start, requesting one');
+      socket.emit('request-grid', { roomCode });
+    }
     
     toast.success('Game started!');
   };

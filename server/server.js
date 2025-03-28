@@ -416,6 +416,8 @@ io.on('connection', (socket) => {
       
       // Check if player with same username already exists
       const existingPlayerIndex = game.players.findIndex(p => p.username === username);
+      let playerGrid;
+      
       if (existingPlayerIndex !== -1) {
         // Update the existing player's socket ID
         const existingPlayer = game.players[existingPlayerIndex];
@@ -424,19 +426,18 @@ io.on('connection', (socket) => {
         // Update the socket ID
         existingPlayer.id = socket.id;
         
-        // Update the grid reference
-        if (game.grids[existingPlayer.id]) {
-          game.grids[socket.id] = game.grids[existingPlayer.id];
+        // Get the existing grid or generate a new one
+        playerGrid = game.grids[existingPlayer.id] || generateUniquePlayerGrid(game.gridSize, username, game.usedGrids);
+        game.grids[socket.id] = playerGrid;
+        
+        // Clean up old grid reference
+        if (existingPlayer.id !== socket.id) {
           delete game.grids[existingPlayer.id];
-        } else {
-          // Generate a new grid using the improved system
-          const grid = generateUniquePlayerGrid(game.gridSize, username, game.usedGrids);
-          game.grids[socket.id] = grid;
         }
       } else {
         // Generate a new grid for new player
-        const grid = generateUniquePlayerGrid(game.gridSize, username, game.usedGrids);
-        game.grids[socket.id] = grid;
+        playerGrid = generateUniquePlayerGrid(game.gridSize, username, game.usedGrids);
+        game.grids[socket.id] = playerGrid;
         
         // Add player to the game
         game.players.push({
@@ -449,12 +450,18 @@ io.on('connection', (socket) => {
       // Join the socket room
       socket.join(roomCode);
       
+      // Log the grid being sent
+      console.log(`Sending grid to player ${username} (${socket.id}):`, JSON.stringify(playerGrid));
+      
       // Emit success event with game state
       socket.emit('joined-room', {
-        grid: game.grids[socket.id],
+        grid: playerGrid,
         players: game.players,
         isHost: game.players[0].id === socket.id
       });
+      
+      // Also emit a separate grid-assigned event to ensure the client receives it
+      socket.emit('grid-assigned', playerGrid);
       
       // Notify other players
       socket.to(roomCode).emit('player-joined', {
