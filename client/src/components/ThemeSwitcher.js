@@ -76,7 +76,7 @@ const ThemeSwitcher = () => {
           px-4 py-2 rounded-lg
           flex items-center space-x-2
           transition-colors duration-200
-          ${theme.effects.glassMorphism}
+          bg-opacity-80 backdrop-blur-md
           bg-${theme.colors.card}
           text-${theme.colors.text}
           border border-${theme.colors.border}
@@ -84,7 +84,7 @@ const ThemeSwitcher = () => {
           focus:outline-none focus:ring-2 focus:ring-${theme.colors.primary[500]}
         `}
         style={{
-          boxShadow: theme.effects.cardShadow,
+          boxShadow: theme.effects?.cardShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
           backdropFilter: 'blur(10px)'
         }}
       >
@@ -102,14 +102,14 @@ const ThemeSwitcher = () => {
             className={`
               absolute right-0 mt-2 w-48
               rounded-lg overflow-hidden
-              ${theme.effects.glassMorphism}
+              bg-opacity-80 backdrop-blur-md
               bg-${theme.colors.card}
               border border-${theme.colors.border}
               shadow-lg
               z-50
             `}
             style={{
-              boxShadow: theme.effects.cardShadow,
+              boxShadow: theme.effects?.cardShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
               backdropFilter: 'blur(10px)'
             }}
           >
