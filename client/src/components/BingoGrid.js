@@ -21,15 +21,12 @@ const emojiMap = {
 
 const BingoGrid = ({ 
   grid, 
-  size, 
   onCellClick, 
   markedCells, 
-  winningLines,
-  symbols,
-  customSymbols
+  winningLines
 }) => {
   const { theme } = useContext(ThemeContext);
-  const gridSize = parseInt(size);
+  const gridSize = grid?.length || 5;
 
   const containerVariants = {
     hidden: { opacity: 0, scale: 0.9 },
@@ -49,36 +46,7 @@ const BingoGrid = ({
       opacity: 1,
       scale: 1,
       transition: { duration: 0.3 }
-    },
-    hover: {
-      scale: 1.05,
-      boxShadow: theme.effects?.cardShadow || '0 4px 6px rgba(0,0,0,0.1)',
-      transition: { duration: 0.2 }
-    },
-    tap: { scale: 0.95 }
-  };
-
-  const markVariants = {
-    initial: { scale: 0, opacity: 0 },
-    animate: { 
-      scale: 1, 
-      opacity: 1,
-      transition: {
-        type: "spring",
-        stiffness: 500,
-        damping: 30
-      }
     }
-  };
-
-  const getWinningLineStyle = (index) => {
-    if (!winningLines?.includes(index)) return {};
-    
-    return {
-      backgroundColor: `${theme.colors.success}33`,
-      boxShadow: `0 0 15px ${theme.colors.success}66`,
-      border: `2px solid ${theme.colors.success}`,
-    };
   };
 
   const getCellStyle = (index) => {
@@ -86,7 +54,20 @@ const BingoGrid = ({
       backgroundColor: theme.colors.card,
       color: theme.colors.text,
       border: `2px solid ${theme.colors.border}`,
-      transition: 'all 0.3s ease',
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '1.25rem',
+      fontWeight: '600',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      borderRadius: '0.5rem',
+      padding: '0.5rem',
+      maxWidth: '80px',
+      maxHeight: '80px',
+      margin: 'auto'
     };
 
     if (markedCells?.includes(index)) {
@@ -94,7 +75,7 @@ const BingoGrid = ({
         ...baseStyle,
         backgroundColor: theme.colors.primary,
         color: '#ffffff',
-        transform: 'scale(1.05)',
+        transform: 'scale(1.02)',
       };
     }
 
@@ -103,7 +84,7 @@ const BingoGrid = ({
         ...baseStyle,
         backgroundColor: theme.colors.success,
         color: '#ffffff',
-        transform: 'scale(1.05)',
+        transform: 'scale(1.02)',
       };
     }
 
@@ -111,120 +92,45 @@ const BingoGrid = ({
   };
 
   if (!grid || grid.length === 0) {
-    // Show debug info when grid is missing but game may have started
-    console.error("Grid is empty or missing:", { grid, size, gameStarted: size !== undefined });
-    
     return (
-      <div 
-        className="rounded-lg p-4"
-        style={{
-          background: theme.colors.card,
-          boxShadow: theme.effects.cardShadow,
-          backdropFilter: theme.effects.glassMorphism
-        }}
-      >
-        <div className="flex flex-col items-center justify-center h-64">
-          <p className="text-red-500 mb-4">Waiting for grid to load...</p>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="px-4 py-2 rounded"
-            style={{
-              background: theme.colors.primary[500],
-              color: 'white'
-            }}
-          >
-            Refresh Game
-          </button>
-        </div>
+      <div className="flex items-center justify-center h-64">
+        <p>Waiting for grid to load...</p>
       </div>
     );
   }
 
-  // Debug log to check grid dimensions
-  console.log("Grid dimensions in BingoGrid:", grid.length, "x", grid[0]?.length);
-  
-  // Ensure we have a complete grid with the correct dimensions
-  const ensureCompleteGrid = (inputGrid) => {
-    // Get the actual grid size from the input grid
-    const size = inputGrid.length;
-    
-    // If grid is already square and complete, return it
-    if (inputGrid.length === size && 
-        inputGrid.every(row => row.length === size)) {
-      return inputGrid;
-    }
-    
-    // Create a new grid with correct dimensions
-    const completeGrid = [];
-    for (let i = 0; i < size; i++) {
-      const row = [];
-      for (let j = 0; j < size; j++) {
-        // Use existing value if available, otherwise generate a fallback
-        if (inputGrid[i] && typeof inputGrid[i][j] === 'number') {
-          row.push(inputGrid[i][j]);
-        } else {
-          // Generate a deterministic number based on position
-          row.push((i * size) + j + 1);
-        }
-      }
-      completeGrid.push(row);
-    }
-    
-    console.log(`Created complete ${size}x${size} grid:`, completeGrid);
-    return completeGrid;
-  };
-
-  // Process grid data to ensure all cells have values and grid is complete
-  const processedGrid = ensureCompleteGrid(grid);
-
-  // Calculate cell size based on grid dimensions
-  const cellSize = `calc((100% - ${(grid.length - 1) * 0.5}rem) / ${grid.length})`;
+  const flatGrid = grid.flat();
 
   return (
     <motion.div
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="grid gap-2 p-4"
-      style={{
-        gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
-      }}
+      className="w-full max-w-2xl mx-auto"
     >
-      {processedGrid.map((number, index) => (
-        <motion.button
-          key={index}
-          variants={cellVariants}
-          whileHover="hover"
-          whileTap="tap"
-          onClick={() => onCellClick(index)}
-          className={`
-            aspect-square rounded-lg flex items-center justify-center
-            text-lg sm:text-xl font-semibold relative overflow-hidden
-            transition-colors duration-300 backdrop-blur-sm bg-opacity-80
-          `}
-          style={getCellStyle(index)}
-        >
-          {markedCells?.includes(index) && (
-            <motion.div
-              variants={markVariants}
-              initial="initial"
-              animate="animate"
-              className="absolute inset-0 flex items-center justify-center"
-              style={{
-                backgroundColor: `${theme.colors.primary}1a`
-              }}
-            >
-              <div 
-                className="w-3/4 h-3/4 rounded-full"
-                style={{
-                  background: `radial-gradient(circle, ${theme.colors.primary}33 0%, transparent 70%)`
-                }}
-              />
-            </motion.div>
-          )}
-          <span className="relative z-10">{number}</span>
-        </motion.button>
-      ))}
+      <div 
+        className="grid gap-2"
+        style={{
+          gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
+          aspectRatio: '1/1',
+          width: '100%',
+          maxWidth: '500px',
+          margin: '0 auto'
+        }}
+      >
+        {flatGrid.map((number, index) => (
+          <motion.button
+            key={index}
+            variants={cellVariants}
+            onClick={() => onCellClick(index)}
+            style={getCellStyle(index)}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            {number}
+          </motion.button>
+        ))}
+      </div>
     </motion.div>
   );
 };

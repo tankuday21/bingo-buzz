@@ -571,7 +571,7 @@ const GamePage = () => {
             className="lg:col-span-2"
           >
             <div
-              className="rounded-xl p-6 backdrop-blur-md bg-opacity-80"
+              className="rounded-xl p-4 sm:p-6 backdrop-blur-md bg-opacity-80"
               style={{
                 backgroundColor: theme.colors.card,
                 boxShadow: theme.effects?.cardShadow,
@@ -598,12 +598,16 @@ const GamePage = () => {
                 <Timer timeLeft={timer} />
               </div>
 
-              <BingoGrid
-                grid={grid}
-                onCellClick={handleMarkNumber}
-                markedCells={markedCells}
-                winningLines={winningLines}
-              />
+              <div className="flex justify-center items-center w-full">
+                <div className="w-full max-w-lg">
+                  <BingoGrid
+                    grid={grid}
+                    onCellClick={handleMarkNumber}
+                    markedCells={markedCells}
+                    winningLines={winningLines}
+                  />
+                </div>
+              </div>
             </div>
           </motion.div>
 
