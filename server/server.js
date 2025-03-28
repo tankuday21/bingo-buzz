@@ -501,9 +501,30 @@ io.on('connection', (socket) => {
       return socket.emit('error', 'Only the host can start the game');
     }
     
-    // Check if enough players are ready
-    if (!game.readyPlayers || game.readyPlayers.length < 1) {
-      return socket.emit('error', 'Not enough players are ready');
+    // Initialize readyPlayers array if not exists
+    if (!game.readyPlayers) {
+      game.readyPlayers = [];
+    }
+    
+    // Get host username
+    const hostPlayer = game.players.find(p => p.id === game.host);
+    const hostUsername = hostPlayer ? hostPlayer.username : null;
+    
+    // Check if there are at least 2 players and someone other than the host is ready
+    // Or if single player mode is supported, just check if the host is ready
+    const hasEnoughReadyPlayers = game.readyPlayers.length >= 1;
+    
+    // Check if host is ready (unless the game only has one player)
+    const isHostReady = (game.players.length === 1) || 
+                        (hostUsername && game.readyPlayers.includes(hostUsername));
+                        
+    if (!hasEnoughReadyPlayers) {
+      return socket.emit('error', 'Not enough players are ready to start the game');
+    }
+    
+    // If the host is not ready, they should be ready to start the game
+    if (!isHostReady && game.players.length > 1) {
+      return socket.emit('error', 'Host must be ready to start the game');
     }
     
     // Start the game

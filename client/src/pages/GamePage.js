@@ -694,17 +694,30 @@ const GamePage = () => {
               
               <div className="flex flex-col space-y-3 mt-8">
                 {isHost ? (
-                  <button
-                    onClick={handleStartGame}
-                    disabled={readyPlayers.length < 1}
-                    className="w-full py-3 rounded-lg font-medium disabled:opacity-50"
-                    style={{
-                      backgroundColor: theme.colors.success,
-                      color: '#ffffff'
-                    }}
-                  >
-                    Start Game ({readyPlayers.length}/{players.length} ready)
-                  </button>
+                  <>
+                    <button
+                      onClick={handleToggleReady}
+                      className="w-full py-3 rounded-lg font-medium"
+                      style={{
+                        backgroundColor: isReady ? theme.colors.success : theme.colors.primary,
+                        color: '#ffffff'
+                      }}
+                    >
+                      {isReady ? 'I\'m Not Ready' : 'I\'m Ready'}
+                    </button>
+                    
+                    <button
+                      onClick={handleStartGame}
+                      disabled={readyPlayers.length < 1}
+                      className="w-full py-3 rounded-lg font-medium disabled:opacity-50"
+                      style={{
+                        backgroundColor: theme.colors.accent,
+                        color: '#ffffff'
+                      }}
+                    >
+                      Start Game ({readyPlayers.length}/{players.length} ready)
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={handleToggleReady}
