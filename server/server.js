@@ -710,12 +710,23 @@ io.on('connection', (socket) => {
       }
       
       // Notify all players with the NUMBER, not just the cellIndex
-      // Each client will find where this number is in their own grid
+      // Use a separate broadcast to ensure all clients receive it
+      console.log(`Broadcasting number-marked event to all players in room ${roomCode}`);
       io.to(roomCode).emit('number-marked', {
-        number: number,  // This is the critical part - send the number to all clients
+        number: number,
         markedBy: socket.id,
         player: player,
         automatic: false
+      });
+      
+      // For debugging, log all players in the room
+      io.in(roomCode).fetchSockets().then(sockets => {
+        console.log(`Room ${roomCode} has ${sockets.length} connected players`);
+        sockets.forEach(s => {
+          console.log(`- Socket ${s.id} in room ${roomCode}`);
+        });
+      }).catch(err => {
+        console.error(`Error fetching sockets for room ${roomCode}:`, err);
       });
       
       // Check for a winner
@@ -856,7 +867,7 @@ io.on('connection', (socket) => {
     nextTurn(roomCode);
   });
   
-  // Handle grid request (for debugging)
+  // Handle request-grid event with improved synchronization
   socket.on('request-grid', ({ roomCode }) => {
     console.log(`Player ${socket.id} requesting grid for room ${roomCode}`);
     const game = games[roomCode];
@@ -865,25 +876,48 @@ io.on('connection', (socket) => {
       return socket.emit('error', 'Room not found');
     }
     
-    // Check if player has a grid
-    if (game.grids[socket.id]) {
-      console.log(`Sending requested grid to player ${socket.id}:`, JSON.stringify(game.grids[socket.id]));
-      socket.emit('grid-assigned', game.grids[socket.id]);
-    } else {
-      console.log(`No grid found for player ${socket.id}, generating new grid`);
+    // Check if player exists in game
+    const player = game.players.find(p => p.id === socket.id);
+    if (!player) {
+      console.log(`Player ${socket.id} not found in game ${roomCode}, cannot send grid`);
+      return socket.emit('error', 'Player not found in game');
+    }
+    
+    // Get this player's grid
+    const playerGrid = game.grids[socket.id];
+    
+    if (playerGrid) {
+      console.log(`Sending requested grid to player ${socket.id} (${player.username}):`, JSON.stringify(playerGrid));
+      socket.emit('grid-assigned', playerGrid);
       
-      // Find the player
-      const player = game.players.find(p => p.id === socket.id);
-      if (!player) {
-        return socket.emit('error', 'Player not found in game');
+      // Also resend current game state for synchronization
+      if (game.started) {
+        // Send information about current turn
+        const currentTurnPlayer = game.players.find(p => p.id === game.currentTurn);
+        socket.emit('turn-changed', {
+          currentTurn: game.currentTurn,
+          player: currentTurnPlayer
+        });
+        
+        // Send marked numbers separately for clarity
+        if (game.markedNumbers && game.markedNumbers.size > 0) {
+          console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id}`);
+          
+          // Convert Set to Array for sending
+          const markedNumbersArray = Array.from(game.markedNumbers);
+          socket.emit('sync-marked-numbers', {
+            markedNumbers: markedNumbersArray
+          });
+        }
       }
+    } else {
+      console.log(`No grid found for player ${socket.id} (${player.username}), generating new grid`);
       
-      // Parse grid size
+      // Generate a new grid for this player
       const [rows, cols] = game.gridSize.split('x').map(Number);
       const total = rows * cols;
       
-      // Generate a completely unique grid for this player
-      // First, create a pool of numbers from 1 to total (e.g., 1-25 for 5x5)
+      // Create a pool of numbers from 1 to total (e.g., 1-25 for 5x5)
       const allNumbers = Array.from({ length: total }, (_, i) => i + 1);
       
       // Shuffle the numbers
@@ -905,11 +939,23 @@ io.on('connection', (socket) => {
         newGrid.push(row);
       }
       
-      // Store the grid
+      // Save the grid
       game.grids[socket.id] = newGrid;
       
-      console.log(`Generated and sending new grid to player ${socket.id}:`, JSON.stringify(newGrid));
+      // Send the grid to the player
+      console.log(`Sending new grid to player ${socket.id} (${player.username}):`, JSON.stringify(newGrid));
       socket.emit('grid-assigned', newGrid);
+      
+      // Also send marked numbers if game has started
+      if (game.started && game.markedNumbers && game.markedNumbers.size > 0) {
+        console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id}`);
+        
+        // Convert Set to Array for sending
+        const markedNumbersArray = Array.from(game.markedNumbers);
+        socket.emit('sync-marked-numbers', {
+          markedNumbers: markedNumbersArray
+        });
+      }
     }
   });
 
@@ -973,15 +1019,10 @@ io.on('connection', (socket) => {
     const markedNumbersArray = Array.from(game.markedNumbers);
     console.log(`Sending ${markedNumbersArray.length} marked numbers to player ${socket.id} in room ${roomCode}:`, markedNumbersArray);
     
-    // Send each marked number to the client
-    for (const number of markedNumbersArray) {
-      socket.emit('number-marked', {
-        number,
-        markedBy: 'system-sync', // Special flag to indicate this is a sync operation
-        player: null,
-        automatic: false
-      });
-    }
+    // Send all marked numbers in a single sync event
+    socket.emit('sync-marked-numbers', {
+      markedNumbers: markedNumbersArray
+    });
   });
 });
 

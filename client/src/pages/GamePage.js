@@ -147,6 +147,7 @@ const GamePage = () => {
     socket.on('game-won', handleGameWon);
     socket.on('error', handleError);
     socket.on('player-ready', handlePlayerReady);
+    socket.on('sync-marked-numbers', handleSyncMarkedNumbers);
     
     // Clean up on unmount
     return () => {
@@ -161,10 +162,11 @@ const GamePage = () => {
       socket.off('game-won', handleGameWon);
       socket.off('error', handleError);
       socket.off('player-ready', handlePlayerReady);
+      socket.off('sync-marked-numbers', handleSyncMarkedNumbers);
       clearInterval(timerIntervalRef.current);
       hasJoinedRef.current = false;
     };
-  }, [roomCode, username]);
+  }, [roomCode, username, navigate]);
   
   // Updated timer effect
   useEffect(() => {
@@ -222,10 +224,17 @@ const GamePage = () => {
       console.log('Socket connected');
       setSocketConnected(true);
       
-      // If we're in a game, try to rejoin
+      // If we're in a game, try to rejoin with explicit grid request
       if (roomCode && username) {
         console.log('Attempting to rejoin game after reconnection');
         socket.emit('rejoin-room', { roomCode, username });
+        
+        // Explicitly request grid and marked numbers after reconnection
+        setTimeout(() => {
+          console.log('Explicitly requesting grid and marked numbers after reconnection');
+          socket.emit('request-grid', { roomCode });
+          socket.emit('request-marked-numbers', { roomCode });
+        }, 1000);
       }
     };
     
@@ -249,6 +258,15 @@ const GamePage = () => {
     if (!socket.connected) {
       console.log('Socket not connected, attempting to connect');
       socket.connect();
+    } else {
+      // If already connected, explicitly request grid and marked numbers
+      if (roomCode) {
+        console.log('Socket already connected, explicitly requesting grid and game state');
+        setTimeout(() => {
+          socket.emit('request-grid', { roomCode });
+          socket.emit('request-marked-numbers', { roomCode });
+        }, 500);
+      }
     }
     
     return () => {
@@ -561,54 +579,64 @@ const GamePage = () => {
       return;
     }
     
-    // Check if grid is properly loaded
     if (!grid || !grid.length) {
-      console.warn(`Grid not yet loaded when receiving number ${numberToFind}, adding to queue for later processing`);
+      console.warn(`Grid not loaded when receiving number ${numberToFind}, requesting grid from server`);
       
-      // Add this number to the pending queue
-      pendingMarkedNumbersRef.current.push({ 
-        number: numberToFind, 
-        markedBy, 
-        player, 
+      // Immediately request the grid from server
+      socket.emit('request-grid', { roomCode });
+      
+      // Store the marked number to process later
+      pendingMarkedNumbersRef.current.push({
+        number: numberToFind,
+        markedBy,
+        player,
         automatic,
-        queuedAt: Date.now() 
+        queuedAt: Date.now()
       });
-      
       return;
     }
     
-    // Always find where this number is in our own grid, regardless of who marked it
+    console.log(`Finding cell index for number ${numberToFind} in grid:`, grid);
+    
+    // Create a flat version of the grid for easier lookup
     const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
     
-    console.log('Current grid state:', grid);
-    console.log('Flat grid for searching:', flatGrid);
-    
-    // Find the correct cell index, ensuring type matching for comparison
-    const localCellIndex = flatGrid.findIndex(cellNum => 
-      (typeof cellNum === 'string' ? parseInt(cellNum, 10) : cellNum) === numberToFind
-    );
-    
-    console.log(`Number ${numberToFind} received, found at position ${localCellIndex} in my grid`);
-    
-    // Only proceed if we found the number in our grid
-    if (localCellIndex !== -1) {
-      // Add to marked cells if not already there
-      setMarkedCells((prev) => {
-        if (!prev.includes(localCellIndex)) {
-          console.log(`Adding cellIndex ${localCellIndex} to markedCells for number ${numberToFind}`);
-          return [...prev, localCellIndex];
-        }
-        return prev;
-      });
+    // Find the index of this number in the grid
+    let cellIndex = -1;
+    for (let i = 0; i < flatGrid.length; i++) {
+      const cellNum = flatGrid[i];
+      const cellNumInt = typeof cellNum === 'string' ? parseInt(cellNum, 10) : cellNum;
       
-      // Add to history with player info
-      setMarkedHistory((prev) => [
-        ...prev, 
-        { 
-          cellIndex: localCellIndex, 
+      if (cellNumInt === numberToFind) {
+        cellIndex = i;
+        break;
+      }
+    }
+    
+    console.log(`Number ${numberToFind} is at cell index ${cellIndex} in my grid`);
+    
+    // If the number is found in our grid, mark it
+    if (cellIndex !== -1) {
+      console.log(`Marking cell ${cellIndex} for number ${numberToFind}`);
+      
+      // Check if this cell is already marked to avoid duplicates
+      if (!markedCells.includes(cellIndex)) {
+        setMarkedCells(prevMarkedCells => {
+          console.log(`Adding cell ${cellIndex} to marked cells`, [...prevMarkedCells, cellIndex]);
+          return [...prevMarkedCells, cellIndex];
+        });
+      } else {
+        console.log(`Cell ${cellIndex} already marked`);
+      }
+      
+      // Add to history for reference
+      setMarkedHistory(prev => [
+        ...prev,
+        {
+          cellIndex,
           number: numberToFind,
-          player: player?.username || 'Unknown', 
-          automatic: !!automatic 
+          player: player?.username || 'Unknown',
+          automatic: !!automatic
         }
       ]);
       
@@ -617,7 +645,7 @@ const GamePage = () => {
         audioRef.current.play().catch(e => console.log('Audio play error:', e));
       }
     } else {
-      console.warn(`Number ${numberToFind} not found in my grid:`, flatGrid);
+      console.warn(`Number ${numberToFind} not found in grid:`, flatGrid);
     }
   };
   
@@ -785,6 +813,69 @@ const GamePage = () => {
       </div>
     </div>
   );
+  
+  // Add this new event handler function
+  const handleSyncMarkedNumbers = ({ markedNumbers }) => {
+    console.log('Received sync-marked-numbers event with', markedNumbers.length, 'numbers');
+    
+    if (!Array.isArray(markedNumbers) || markedNumbers.length === 0) {
+      console.log('No marked numbers to sync');
+      return;
+    }
+    
+    if (!grid || grid.length === 0) {
+      console.warn('Cannot sync marked numbers - grid not loaded yet');
+      // Keep track of these numbers and process them when grid is available
+      markedNumbers.forEach(number => {
+        pendingMarkedNumbersRef.current.push({
+          number,
+          markedBy: 'system-sync',
+          player: null,
+          automatic: false,
+          queuedAt: Date.now()
+        });
+      });
+      // Request grid from server
+      socket.emit('request-grid', { roomCode });
+      return;
+    }
+    
+    console.log('Processing', markedNumbers.length, 'marked numbers from sync event');
+    
+    // Process each marked number
+    const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
+    const newMarkedCells = [...markedCells];
+    let changed = false;
+    
+    markedNumbers.forEach(number => {
+      // Find the cell index for this number
+      const numberInt = typeof number === 'string' ? parseInt(number, 10) : number;
+      let cellIndex = -1;
+      
+      for (let i = 0; i < flatGrid.length; i++) {
+        const cellNum = flatGrid[i];
+        const cellNumInt = typeof cellNum === 'string' ? parseInt(cellNum, 10) : cellNum;
+        
+        if (cellNumInt === numberInt) {
+          cellIndex = i;
+          break;
+        }
+      }
+      
+      // If found and not already marked, add to marked cells
+      if (cellIndex !== -1 && !newMarkedCells.includes(cellIndex)) {
+        console.log(`Marking cell ${cellIndex} for synced number ${numberInt}`);
+        newMarkedCells.push(cellIndex);
+        changed = true;
+      }
+    });
+    
+    // Only update state if we actually added new cells
+    if (changed) {
+      console.log('Updating marked cells from sync event', newMarkedCells);
+      setMarkedCells(newMarkedCells);
+    }
+  };
   
   return (
     <motion.div 
