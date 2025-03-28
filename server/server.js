@@ -888,28 +888,34 @@ io.on('connection', (socket) => {
     
     if (playerGrid) {
       console.log(`Sending requested grid to player ${socket.id} (${player.username}):`, JSON.stringify(playerGrid));
+      
+      // Emit grid first, and don't send marked numbers immediately
       socket.emit('grid-assigned', playerGrid);
       
-      // Also resend current game state for synchronization
-      if (game.started) {
-        // Send information about current turn
-        const currentTurnPlayer = game.players.find(p => p.id === game.currentTurn);
-        socket.emit('turn-changed', {
-          currentTurn: game.currentTurn,
-          player: currentTurnPlayer
-        });
-        
-        // Send marked numbers separately for clarity
-        if (game.markedNumbers && game.markedNumbers.size > 0) {
-          console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id}`);
-          
-          // Convert Set to Array for sending
-          const markedNumbersArray = Array.from(game.markedNumbers);
-          socket.emit('sync-marked-numbers', {
-            markedNumbers: markedNumbersArray
+      // Wait for client to acknowledge grid reception before sending marked numbers
+      setTimeout(() => {
+        if (game.started) {
+          // Send information about current turn
+          const currentTurnPlayer = game.players.find(p => p.id === game.currentTurn);
+          socket.emit('turn-changed', {
+            currentTurn: game.currentTurn,
+            player: currentTurnPlayer
           });
+          
+          // Send marked numbers separately after a delay
+          setTimeout(() => {
+            if (game.markedNumbers && game.markedNumbers.size > 0) {
+              console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id} after grid acknowledged`);
+              
+              // Convert Set to Array for sending
+              const markedNumbersArray = Array.from(game.markedNumbers);
+              socket.emit('sync-marked-numbers', {
+                markedNumbers: markedNumbersArray
+              });
+            }
+          }, 1000); // Wait 1 second after turn info to send marked numbers
         }
-      }
+      }, 500); // Wait 500ms after grid to send turn info
     } else {
       console.log(`No grid found for player ${socket.id} (${player.username}), generating new grid`);
       
@@ -942,20 +948,23 @@ io.on('connection', (socket) => {
       // Save the grid
       game.grids[socket.id] = newGrid;
       
-      // Send the grid to the player
+      // Send the grid to the player first
       console.log(`Sending new grid to player ${socket.id} (${player.username}):`, JSON.stringify(newGrid));
       socket.emit('grid-assigned', newGrid);
       
-      // Also send marked numbers if game has started
-      if (game.started && game.markedNumbers && game.markedNumbers.size > 0) {
-        console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id}`);
-        
-        // Convert Set to Array for sending
-        const markedNumbersArray = Array.from(game.markedNumbers);
-        socket.emit('sync-marked-numbers', {
-          markedNumbers: markedNumbersArray
-        });
-      }
+      // Wait for client to acknowledge grid reception before sending marked numbers
+      setTimeout(() => {
+        // Also send marked numbers if game has started
+        if (game.started && game.markedNumbers && game.markedNumbers.size > 0) {
+          console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id} after grid reception`);
+          
+          // Convert Set to Array for sending
+          const markedNumbersArray = Array.from(game.markedNumbers);
+          socket.emit('sync-marked-numbers', {
+            markedNumbers: markedNumbersArray
+          });
+        }
+      }, 1000); // Wait 1 second before sending marked numbers
     }
   });
 
@@ -1023,6 +1032,45 @@ io.on('connection', (socket) => {
     socket.emit('sync-marked-numbers', {
       markedNumbers: markedNumbersArray
     });
+  });
+
+  // Handle grid-ready acknowledgment from client
+  socket.on('grid-ready', ({ roomCode }) => {
+    console.log(`Player ${socket.id} acknowledged grid reception for room ${roomCode}`);
+    const game = games[roomCode];
+    
+    if (!game) {
+      return;
+    }
+    
+    // Find the player
+    const player = game.players.find(p => p.id === socket.id);
+    if (!player) {
+      console.warn(`Player ${socket.id} not found in game ${roomCode}`);
+      return;
+    }
+    
+    // Send marked numbers immediately now that grid is ready
+    if (game.markedNumbers && game.markedNumbers.size > 0) {
+      console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id} immediately after grid-ready acknowledgment`);
+      
+      // Convert Set to Array for sending
+      const markedNumbersArray = Array.from(game.markedNumbers);
+      socket.emit('sync-marked-numbers', {
+        markedNumbers: markedNumbersArray
+      });
+    }
+    
+    // Send current turn information if game has started
+    if (game.started) {
+      const currentTurnPlayer = game.players.find(p => p.id === game.currentTurn);
+      if (currentTurnPlayer) {
+        socket.emit('turn-changed', {
+          currentTurn: game.currentTurn,
+          player: currentTurnPlayer
+        });
+      }
+    }
   });
 });
 

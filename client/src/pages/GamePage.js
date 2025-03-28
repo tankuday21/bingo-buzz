@@ -342,15 +342,27 @@ const GamePage = () => {
     // Force immediate state update via callback to ensure it's fully processed
     setGrid(() => gridCopy);
     
-    // Request any missed marked numbers from the server after grid initialization
-    if (roomCode) {
-      console.log('Requesting any missed marked numbers after grid assignment');
+    // Explicitly acknowledge grid reception to the server
+    if (roomCode && socketConnected) {
+      console.log('Sending grid-ready acknowledgment to server');
       setTimeout(() => {
-        if (socketConnected) {
-          socket.emit('request-marked-numbers', { roomCode });
-        }
-      }, 500); // Wait 500ms to ensure grid state is updated
+        socket.emit('grid-ready', { roomCode });
+      }, 300); // Short delay to ensure state is updated
     }
+    
+    // Process any pending marked numbers after the grid is set
+    setTimeout(() => {
+      if (pendingMarkedNumbersRef.current.length > 0) {
+        console.log(`Processing ${pendingMarkedNumbersRef.current.length} queued numbers after grid assignment`);
+        const pendingNumbers = [...pendingMarkedNumbersRef.current];
+        pendingMarkedNumbersRef.current = [];
+        
+        pendingNumbers.forEach(pendingNumber => {
+          console.log('Processing queued number after grid assignment:', pendingNumber);
+          handleNumberMarked(pendingNumber);
+        });
+      }
+    }, 500); // Increase delay to ensure grid state is updated
   };
   
   // Fix player mapping in the waiting room section
@@ -825,18 +837,50 @@ const GamePage = () => {
     
     if (!grid || grid.length === 0) {
       console.warn('Cannot sync marked numbers - grid not loaded yet');
-      // Keep track of these numbers and process them when grid is available
+      
+      // Store these numbers in pending queue with high priority
       markedNumbers.forEach(number => {
         pendingMarkedNumbersRef.current.push({
           number,
           markedBy: 'system-sync',
           player: null,
           automatic: false,
-          queuedAt: Date.now()
+          queuedAt: Date.now(),
+          highPriority: true
         });
       });
-      // Request grid from server
+      
+      // Request grid explicitly
+      console.log('Requesting grid because sync-marked-numbers received before grid was loaded');
       socket.emit('request-grid', { roomCode });
+      
+      // Set a retry mechanism for these pending numbers
+      const retryInterval = setInterval(() => {
+        if (grid && grid.length > 0) {
+          console.log('Grid now available, retrying processing of high priority queued numbers');
+          
+          // Find high priority numbers
+          const highPriorityNumbers = pendingMarkedNumbersRef.current.filter(item => item.highPriority);
+          
+          if (highPriorityNumbers.length > 0) {
+            console.log(`Processing ${highPriorityNumbers.length} high priority numbers`);
+            
+            // Remove these from the pending queue
+            pendingMarkedNumbersRef.current = pendingMarkedNumbersRef.current.filter(item => !item.highPriority);
+            
+            // Process each high priority number
+            highPriorityNumbers.forEach(pendingNumber => {
+              handleNumberMarked(pendingNumber);
+            });
+          }
+          
+          clearInterval(retryInterval);
+        }
+      }, 1000); // Check every second
+      
+      // Clear interval after 10 seconds to prevent memory leaks
+      setTimeout(() => clearInterval(retryInterval), 10000);
+      
       return;
     }
     
