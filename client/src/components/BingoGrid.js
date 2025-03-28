@@ -94,7 +94,7 @@ const BingoGrid = ({
   const handleCellClick = (number, index) => {
     console.log(`Cell clicked: number ${number}, index ${index}`);
     if (typeof onCellClick === 'function') {
-      // Pass both the number and the cell index to the parent component
+      // Pass the cell index first, then the number to the parent component
       onCellClick(index, number);
     }
   };

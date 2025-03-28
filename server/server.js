@@ -957,6 +957,9 @@ function startTurn(roomCode) {
     return;
   }
   
+  // Ensure turnIndex is within bounds
+  game.turnIndex = game.turnIndex % game.players.length;
+  
   // Find the current player based on turnIndex
   const currentPlayer = game.players[game.turnIndex];
   if (!currentPlayer) {
@@ -972,6 +975,13 @@ function startTurn(roomCode) {
   // Notify all players about whose turn it is
   io.to(roomCode).emit('turn-started', {
     playerId: game.currentTurn,
+    player: currentPlayer,
+    players: game.players
+  });
+
+  // Also emit turn-changed for backward compatibility
+  io.to(roomCode).emit('turn-changed', {
+    currentTurn: game.currentTurn,
     player: currentPlayer
   });
   
@@ -1008,6 +1018,7 @@ function startTurn(roomCode) {
       
       // Notify all players
       io.to(roomCode).emit('number-marked', {
+        cellIndex: playerGrid.flat().indexOf(randomNum), // Add cell index
         number: randomNum,
         markedBy: game.currentTurn,
         player: currentPlayer,
@@ -1038,6 +1049,7 @@ function startTurn(roomCode) {
         
         // End the game
         game.started = false;
+        return; // Exit without moving to next turn
       }
     }
     
@@ -1057,6 +1069,37 @@ function nextTurn(roomCode) {
     console.error(`Cannot move to next turn: Invalid game state for room ${roomCode}`);
     return;
   }
+  
+  // Check for any winner before moving to next turn
+  const winner = checkWin(game);
+  if (winner) {
+    const winningPlayer = game.players.find(p => p.id === winner.playerId);
+    
+    // Calculate score based on time and turns
+    const gameTime = (Date.now() - game.startTime) / 1000;
+    const score = Math.max(100 - Math.floor(gameTime / 10), 10);
+    
+    // Update winning player's score
+    winningPlayer.score = (winningPlayer.score || 0) + score;
+    
+    // Save to leaderboard
+    updateLeaderboard(winningPlayer, score);
+    
+    // Notify all players
+    io.to(roomCode).emit('game-won', {
+      player: winningPlayer,
+      lines: winner.lines,
+      score
+    });
+    
+    // End the game
+    game.started = false;
+    return;
+  }
+  
+  // Move to the next player
+  game.turnIndex = (game.turnIndex + 1) % game.players.length;
+  game.currentTurn = game.players[game.turnIndex].id;
   
   // Start the new turn immediately
   startTurn(roomCode);

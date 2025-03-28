@@ -136,6 +136,7 @@ const GamePage = () => {
     socket.on('player-left', handlePlayerLeft);
     socket.on('game-started', handleGameStarted);
     socket.on('turn-changed', handleTurnChanged);
+    socket.on('turn-started', handleTurnChanged);
     socket.on('number-marked', handleNumberMarked);
     socket.on('game-won', handleGameWon);
     socket.on('error', handleError);
@@ -149,6 +150,7 @@ const GamePage = () => {
       socket.off('player-left', handlePlayerLeft);
       socket.off('game-started', handleGameStarted);
       socket.off('turn-changed', handleTurnChanged);
+      socket.off('turn-started', handleTurnChanged);
       socket.off('number-marked', handleNumberMarked);
       socket.off('game-won', handleGameWon);
       socket.off('error', handleError);
@@ -158,14 +160,18 @@ const GamePage = () => {
     };
   }, [roomCode, username]);
   
-  // useEffect for timer management - separate from turn handling
+  // Updated timer effect
   useEffect(() => {
     let isActive = true;
     
     const startTimer = () => {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
       }
+      
+      // Reset timer to 15 seconds
+      setTimer(15);
       
       timerIntervalRef.current = setInterval(() => {
         if (!isActive) return;
@@ -178,6 +184,7 @@ const GamePage = () => {
           if (newValue === 0 && isMyTurn && socket.connected) {
             console.log('Timer reached zero, ending turn automatically');
             clearInterval(timerIntervalRef.current);
+            timerIntervalRef.current = null;
             socket.emit('end-turn', { roomCode });
           }
           return newValue;
@@ -185,9 +192,9 @@ const GamePage = () => {
       }, 1000);
     };
 
-    // Start timer when game is started, regardless of whose turn it is
-    if (gameStarted) {
-      console.log('Starting timer for turn');
+    // Start or restart timer when it's my turn
+    if (gameStarted && isMyTurn) {
+      console.log('Starting timer for my turn');
       startTimer();
     }
     
@@ -440,10 +447,30 @@ const GamePage = () => {
   
   const handleTurnChanged = (data) => {
     console.log('Turn changed:', data);
-    setCurrentTurn(data.currentTurn);
-    setIsMyTurn(data.currentTurn === username);
-    setTimer(15);
-    setGameMessage(data.currentTurn === username ? 'Your turn!' : `${data.currentTurn}'s turn`);
+    
+    // Update current turn with the player ID
+    const newCurrentTurn = data.currentTurn || data.playerId;
+    setCurrentTurn(newCurrentTurn);
+    
+    // Check if it's my turn
+    const isMyTurnNow = newCurrentTurn === socket.id;
+    setIsMyTurn(isMyTurnNow);
+    
+    if (isMyTurnNow) {
+      console.log('It is now MY turn!');
+      // Reset timer when it's my turn
+      setTimer(15);
+      setGameMessage('Your turn! Click on a number.');
+    } else {
+      const currentPlayer = data.player || players.find(p => p.id === newCurrentTurn);
+      const playerName = currentPlayer ? currentPlayer.username : 'Unknown';
+      setGameMessage(`Waiting for ${playerName} to choose a number...`);
+    }
+    
+    // If players array is provided in the data, update it
+    if (data.players) {
+      setPlayers(data.players);
+    }
   };
   
   const handleNumberMarked = ({ cellIndex, markedBy, player, automatic }) => {
@@ -551,35 +578,43 @@ const GamePage = () => {
   
   // Handle marking a number
   const handleMarkNumber = (cellIndex, number) => {
-    if (!gameStarted || !isMyTurn || markedCells.includes(cellIndex) || winner) {
-      console.log('Cannot mark number:', { gameStarted, isMyTurn, alreadyMarked: markedCells.includes(cellIndex), winner });
+    console.log('Attempting to mark number:', number, 'at index:', cellIndex);
+    
+    // Check if the game has started and it's my turn
+    if (!gameStarted) {
+      console.log('Game not started yet');
       return;
     }
     
-    console.log(`Marking cell: index ${cellIndex}, number ${number}`);
+    if (!isMyTurn) {
+      console.log('Not my turn');
+      return;
+    }
     
-    // If number wasn't provided as a parameter, try to get it from the grid
-    if (number === undefined && Array.isArray(grid)) {
-      // Handle flat grid (1D array)
-      if (!Array.isArray(grid[0])) {
-        number = grid[cellIndex];
-      } 
-      // Handle 2D grid
-      else {
-        const flatGrid = grid.flat();
-        number = flatGrid[cellIndex];
-      }
+    if (winner) {
+      console.log('Game already has a winner');
+      return;
+    }
+    
+    // Get the number from the grid if not provided
+    if (!number && grid && grid.length > 0) {
+      const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
+      number = flatGrid[cellIndex];
     }
     
     if (!number) {
-      console.error('Could not find number at cell index:', cellIndex, 'Grid:', grid);
-      toast.error('Error: Could not find number');
+      console.error('No valid number found at index', cellIndex);
       return;
     }
     
-    // Send both the number and cellIndex to the server
-    console.log(`Sending mark-number: ${number} (cell index ${cellIndex})`);
-    socket.emit('mark-number', { roomCode, number, cellIndex });
+    console.log('Marking number:', number, 'at index:', cellIndex);
+    
+    // Send the mark to the server
+    socket.emit('mark-number', {
+      roomCode,
+      number,
+      cellIndex
+    });
   };
   
   return (
