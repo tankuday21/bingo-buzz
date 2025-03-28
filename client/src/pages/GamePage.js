@@ -20,7 +20,7 @@ const GamePage = () => {
   // Game state
   const [grid, setGrid] = useState([]);
   const [players, setPlayers] = useState([]);
-  const [marked, setMarked] = useState(new Set());
+  const [markedCells, setMarkedCells] = useState([]);
   const [currentTurn, setCurrentTurn] = useState(null);
   const [gameStarted, setGameStarted] = useState(false);
   const [isMyTurn, setIsMyTurn] = useState(false);
@@ -29,6 +29,7 @@ const GamePage = () => {
   const [winningLines, setWinningLines] = useState([]);
   const [markedHistory, setMarkedHistory] = useState([]);
   const [currentTurnName, setCurrentTurnName] = useState('');
+  const [gameMessage, setGameMessage] = useState('');
   
   // UI state
   const [symbols, setSymbols] = useState('numbers'); // 'numbers' or 'emojis'
@@ -103,7 +104,7 @@ const GamePage = () => {
     // Reset game state on mount
     setGrid([]);
     setPlayers([]);
-    setMarked(new Set());
+    setMarkedCells([]);
     setCurrentTurn(null);
     setGameStarted(false);
     setIsMyTurn(false);
@@ -111,6 +112,7 @@ const GamePage = () => {
     setWinner(null);
     setWinningLines([]);
     setMarkedHistory([]);
+    setGameMessage('');
     
     // Only join room if we haven't already
     if (!hasJoinedRef.current) {
@@ -125,6 +127,7 @@ const GamePage = () => {
     socket.on('player-joined', handlePlayerJoined);
     socket.on('player-left', handlePlayerLeft);
     socket.on('game-started', handleGameStarted);
+    socket.on('turn-changed', handleTurnChanged);
     socket.on('number-marked', handleNumberMarked);
     socket.on('game-won', handleGameWon);
     socket.on('error', handleError);
@@ -136,6 +139,7 @@ const GamePage = () => {
       socket.off('player-joined', handlePlayerJoined);
       socket.off('player-left', handlePlayerLeft);
       socket.off('game-started', handleGameStarted);
+      socket.off('turn-changed', handleTurnChanged);
       socket.off('number-marked', handleNumberMarked);
       socket.off('game-won', handleGameWon);
       socket.off('error', handleError);
@@ -219,11 +223,11 @@ const GamePage = () => {
       console.log('Received game state:', state);
       setPlayers(state.players);
       setGrid(state.grid);
-      setMarked(new Set(state.markedNumbers));
+      setMarkedCells(state.markedCells);
       setCurrentTurnName(state.currentTurn);
       setIsMyTurn(state.currentTurn === username);
-      if (state.lastMarkedNumber) {
-        setMarkedHistory(prev => [...prev, state.lastMarkedNumber]);
+      if (state.lastMarkedCell) {
+        setMarkedHistory(prev => [...prev, state.lastMarkedCell]);
       }
     };
 
@@ -264,7 +268,7 @@ const GamePage = () => {
       // Reset game state
       setGrid([]);
       setPlayers([]);
-      setMarked(new Set());
+      setMarkedCells([]);
       setCurrentTurn(null);
       setGameStarted(false);
       setIsMyTurn(false);
@@ -272,6 +276,7 @@ const GamePage = () => {
       setWinner(null);
       setWinningLines([]);
       setMarkedHistory([]);
+      setGameMessage('');
       // Navigate to home page
       navigate('/');
     };
@@ -345,6 +350,7 @@ const GamePage = () => {
       
       if (isFirstPlayer) {
         console.log('You are the host');
+        setGameMessage('You are the host. Start the game when ready.');
       }
     }
   };
@@ -369,6 +375,7 @@ const GamePage = () => {
     if (updatedPlayers.length > 0 && updatedPlayers[0].id === socket.id) {
       setIsHost(true);
       toast.success('You are now the host');
+      setGameMessage('You are the host. Start the game when ready.');
     }
   };
   
@@ -382,7 +389,7 @@ const GamePage = () => {
     
     // Update current turn
     setCurrentTurn(data.currentTurn);
-    setIsMyTurn(data.currentTurn === socket.id);
+    setIsMyTurn(data.currentTurn === username);
     
     // Set game as started
     setGameStarted(true);
@@ -394,56 +401,23 @@ const GamePage = () => {
     }
     
     toast.success('Game started!');
+    setGameMessage(data.currentTurn === username ? 'Your turn!' : `${data.currentTurn}'s turn`);
   };
   
-  // Handle turn started event
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleTurnStarted = (data) => {
-      console.log('Turn started for player:', data.playerId, 'Current socket ID:', socket.id);
-      
-      // Clear any existing timer
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      
-      // Reset timer state for all players
-      setTimer(15);
-      
-      // Update whose turn it is
-      setCurrentTurn(data.playerId);
-      setIsMyTurn(data.playerId === socket.id);
-      
-      // Show toast notification
-      if (data.playerId === socket.id) {
-        toast.success("It's your turn!");
-      } else {
-        const playerName = players.find(p => p.id === data.playerId)?.username || 'Unknown';
-        toast(`It's ${playerName}'s turn`);
-      }
-    };
-
-    socket.on('turn-started', handleTurnStarted);
-
-    return () => {
-      socket.off('turn-started', handleTurnStarted);
-      // Clear timer on cleanup
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [socket, players]);
+  const handleTurnChanged = (data) => {
+    console.log('Turn changed:', data);
+    setCurrentTurn(data.currentTurn);
+    setIsMyTurn(data.currentTurn === username);
+    setTimer(15);
+    setGameMessage(data.currentTurn === username ? 'Your turn!' : `${data.currentTurn}'s turn`);
+  };
   
-  const handleNumberMarked = ({ number, markedBy, player, automatic }) => {
-    console.log('Number marked:', number, 'by player:', player?.username || markedBy);
+  const handleNumberMarked = ({ cellIndex, markedBy, player, automatic }) => {
+    console.log('Number marked:', cellIndex, 'by player:', player?.username || markedBy);
     
     // Only add the specific number to the marked set
-    setMarked((prev) => {
-      const newMarked = new Set(prev);
-      newMarked.add(number);
+    setMarkedCells((prev) => {
+      const newMarked = [...prev, cellIndex];
       return newMarked;
     });
     
@@ -451,7 +425,7 @@ const GamePage = () => {
     setMarkedHistory((prev) => [
       ...prev, 
       { 
-        number, 
+        cellIndex, 
         player: player?.username || 'Unknown', 
         automatic: !!automatic 
       }
@@ -475,11 +449,13 @@ const GamePage = () => {
     }, 10000);
     
     toast.success(`${player.username} won with a score of ${score}!`);
+    setGameMessage(`${player.username} won the game!`);
   };
   
   const handleError = (message) => {
     console.error('Game error:', message);
     toast.error(message);
+    setGameMessage(message);
   };
   
   // Handle exiting the game and returning to home page
@@ -523,7 +499,7 @@ const GamePage = () => {
   };
 
   // Handle marking a number
-  const handleMarkNumber = (number) => {
+  const handleMarkNumber = (cellIndex) => {
     if (!socket || !roomCode) return;
     
     // Only allow marking if it's my turn
@@ -532,8 +508,8 @@ const GamePage = () => {
       return;
     }
     
-    console.log('Marking number:', number);
-    socket.emit('mark-number', { roomCode, number });
+    console.log('Marking number:', cellIndex);
+    socket.emit('mark-number', { roomCode, cellIndex });
   };
   
   // Handle copying room code to clipboard
@@ -624,11 +600,9 @@ const GamePage = () => {
 
               <BingoGrid
                 grid={grid}
-                marked={marked}
-                onMarkNumber={gameStarted ? handleMarkNumber : undefined}
-                isMyTurn={isMyTurn && gameStarted}
+                onCellClick={handleMarkNumber}
+                markedCells={markedCells}
                 winningLines={winningLines}
-                symbols={symbols}
               />
             </div>
           </motion.div>
@@ -649,7 +623,7 @@ const GamePage = () => {
               <PlayersList
                 players={players}
                 currentTurn={currentTurn}
-                winners={winner ? [winner] : []}
+                winner={winner}
               />
             </div>
 
@@ -670,6 +644,18 @@ const GamePage = () => {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {gameMessage && (
+              <div
+                className="mt-4 p-4 rounded-xl text-center font-medium"
+                style={{
+                  backgroundColor: theme.colors.primary,
+                  color: theme.colors.card
+                }}
+              >
+                {gameMessage}
+              </div>
+            )}
           </motion.div>
         </div>
       </div>

@@ -1,100 +1,56 @@
 import React, { useContext } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { ThemeContext } from '../context/ThemeContext';
 
-const PlayersList = ({ players, currentTurn }) => {
+const PlayersList = ({ players, currentTurn, winner }) => {
   const { theme } = useContext(ThemeContext);
 
-  const playerVariants = {
-    initial: { 
-      opacity: 0, 
-      x: -20 
-    },
-    animate: { 
-      opacity: 1, 
-      x: 0,
-      transition: {
-        type: "spring",
-        stiffness: 300,
-        damping: 25
-      }
-    },
-    exit: { 
-      opacity: 0, 
-      x: 20,
-      transition: {
-        duration: 0.2
-      }
-    }
-  };
-
-  const getStatusColor = (player) => {
-    if (player.id === currentTurn) {
-      return theme.colors.primary[500];
-    }
-    if (player.status === 'disconnected') {
-      return theme.colors.primary[300];
-    }
-    return theme.colors.text;
-  };
+  if (!players || players.length === 0) {
+    return (
+      <div className="text-center p-4">
+        <p>Waiting for players to join...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">
-      <AnimatePresence>
-        {players.map((player, index) => (
-          <motion.div
-            key={player.id}
-            variants={playerVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="flex items-center justify-between p-2 rounded-lg"
-            style={{
-              background: player.id === currentTurn ? theme.colors.primary[50] : 'transparent',
-              border: `1px solid ${theme.colors.border}`,
-              boxShadow: player.id === currentTurn ? theme.effects.cardShadow : 'none'
-            }}
-          >
-            <div className="flex items-center space-x-2">
-              <span 
-                className="w-2 h-2 rounded-full"
-                style={{
-                  background: player.status === 'connected' ? theme.colors.success[500] : theme.colors.primary[300]
-                }}
-              />
-              <span style={{ color: getStatusColor(player) }}>
-                {player.username}
-                {player.isHost && (
-                  <span 
-                    className="ml-2 text-xs"
-                    style={{ color: theme.colors.primary[500] }}
-                  >
-                    (Host)
-                  </span>
-                )}
-              </span>
-            </div>
-            {player.score !== undefined && (
-              <span 
-                className="font-bold"
-                style={{ color: theme.colors.primary[600] }}
-              >
-                {player.score}
+      {players.map((player) => (
+        <div
+          key={player.username}
+          className="p-3 rounded-lg flex items-center justify-between"
+          style={{
+            backgroundColor: winner === player.username 
+              ? theme.colors.success 
+              : currentTurn === player.username 
+                ? theme.colors.primary 
+                : `${theme.colors.card}66`,
+            color: (winner === player.username || currentTurn === player.username) 
+              ? theme.colors.card 
+              : theme.colors.text,
+            border: `2px solid ${
+              winner === player.username 
+                ? theme.colors.success 
+                : currentTurn === player.username 
+                  ? theme.colors.primary 
+                  : theme.colors.border
+            }`
+          }}
+        >
+          <span className="font-medium">{player.username}</span>
+          <div className="flex items-center space-x-2">
+            {winner === player.username && (
+              <span className="text-sm px-2 py-1 rounded-full bg-white bg-opacity-20">
+                Winner! 🏆
               </span>
             )}
-          </motion.div>
-        ))}
-      </AnimatePresence>
-      
-      {players.length === 0 && (
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 0.7 }}
-          style={{ color: theme.colors.text }}
-        >
-          No players have joined yet
-        </motion.p>
-      )}
+            {currentTurn === player.username && !winner && (
+              <span className="text-sm px-2 py-1 rounded-full bg-white bg-opacity-20">
+                Current Turn
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

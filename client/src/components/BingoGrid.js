@@ -86,15 +86,24 @@ const BingoGrid = ({
       backgroundColor: theme.colors.card,
       color: theme.colors.text,
       border: `2px solid ${theme.colors.border}`,
-      boxShadow: theme.effects?.cardShadow || 'none',
+      transition: 'all 0.3s ease',
     };
 
     if (markedCells?.includes(index)) {
       return {
         ...baseStyle,
-        backgroundColor: `${theme.colors.primary}33`,
-        border: `2px solid ${theme.colors.primary}`,
-        boxShadow: `0 0 10px ${theme.colors.primary}33`,
+        backgroundColor: theme.colors.primary,
+        color: '#ffffff',
+        transform: 'scale(1.05)',
+      };
+    }
+
+    if (winningLines?.includes(index)) {
+      return {
+        ...baseStyle,
+        backgroundColor: theme.colors.success,
+        color: '#ffffff',
+        transform: 'scale(1.05)',
       };
     }
 
@@ -193,10 +202,7 @@ const BingoGrid = ({
             text-lg sm:text-xl font-semibold relative overflow-hidden
             transition-colors duration-300 backdrop-blur-sm bg-opacity-80
           `}
-          style={{
-            ...getCellStyle(index),
-            ...getWinningLineStyle(index)
-          }}
+          style={getCellStyle(index)}
         >
           {markedCells?.includes(index) && (
             <motion.div

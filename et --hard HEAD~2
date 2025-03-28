@@ -1,0 +1,3 @@
+[33m1dbdc77[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m)[m Add @emotion/react and @emotion/styled dependencies for animations
+[33m07de358[m Add react-icons dependency for theme icons
+[33m565795f[m Enhance UI with animations and visual effects: Add micro-animations, improve theme system, and add star effects
