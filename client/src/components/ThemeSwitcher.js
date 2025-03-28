@@ -1,136 +1,60 @@
-import React, { useContext, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useContext } from 'react';
 import { ThemeContext } from '../context/ThemeContext';
 import { themes } from '../styles/themes';
 
 const ThemeSwitcher = () => {
-  const { currentThemeName, toggleTheme, availableThemes, theme } = useContext(ThemeContext);
   const [isOpen, setIsOpen] = useState(false);
+  const { theme, currentThemeName, toggleTheme, availableThemes } = useContext(ThemeContext);
 
-  // Fallback to default theme if current theme is undefined
-  const currentTheme = theme || themes.default;
-
-  const dropdownVariants = {
-    hidden: { 
-      opacity: 0,
-      y: -10,
-      scale: 0.95
-    },
-    visible: {
-      opacity: 1,
-      y: 0,
-      scale: 1,
-      transition: {
-        duration: 0.2
-      }
-    },
-    exit: {
-      opacity: 0,
-      y: -10,
-      scale: 0.95,
-      transition: {
-        duration: 0.15
-      }
-    }
+  const buttonStyle = {
+    backgroundColor: theme.colors.card,
+    color: theme.colors.text,
+    border: `2px solid ${theme.colors.border}`,
+    boxShadow: theme.effects?.cardShadow || 'none',
+    backdropFilter: 'blur(8px)',
   };
 
-  const buttonVariants = {
-    hover: {
-      scale: 1.05,
-      transition: {
-        duration: 0.2
-      }
-    },
-    tap: {
-      scale: 0.95
-    }
-  };
-
-  const getThemeIcon = (themeId) => {
-    switch (themeId) {
-      case 'default':
-        return '🌞';
-      case 'neon':
-        return '💜';
-      case 'retro':
-        return '📺';
-      case 'cartoon':
-        return '🎨';
-      case 'galaxy':
-        return '🌌';
-      case 'midnight':
-        return '🌙';
-      case 'crystal':
-        return '💎';
-      case 'festive':
-        return '🎄';
-      default:
-        return '🎨';
-    }
+  const dropdownStyle = {
+    backgroundColor: theme.colors.card,
+    border: `2px solid ${theme.colors.border}`,
+    boxShadow: theme.effects?.cardShadow || 'none',
   };
 
   return (
     <div className="relative">
-      <motion.button
-        variants={buttonVariants}
-        whileHover="hover"
-        whileTap="tap"
+      <button
         onClick={() => setIsOpen(!isOpen)}
-        className="px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors duration-200"
-        style={{
-          backgroundColor: currentTheme.colors.card,
-          color: currentTheme.colors.text,
-          border: `1px solid ${currentTheme.colors.border}`,
-          boxShadow: currentTheme.effects?.cardShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-          backdropFilter: 'blur(10px)',
-          opacity: 0.8
-        }}
+        className="px-4 py-2 rounded-lg transition-all duration-300 hover:scale-105 bg-opacity-80 backdrop-blur-md"
+        style={buttonStyle}
       >
-        <span>{getThemeIcon(currentThemeName)}</span>
-        <span>Theme</span>
-      </motion.button>
+        {themes[currentThemeName]?.name || 'Default Theme'}
+      </button>
 
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            variants={dropdownVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            className="absolute right-0 mt-2 w-48 rounded-lg overflow-hidden shadow-lg z-50"
-            style={{
-              backgroundColor: currentTheme.colors.card,
-              border: `1px solid ${currentTheme.colors.border}`,
-              boxShadow: currentTheme.effects?.cardShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-              backdropFilter: 'blur(10px)',
-              opacity: 0.8
-            }}
-          >
-            {availableThemes.map((themeOption) => (
-              <motion.button
-                key={themeOption.id}
-                onClick={() => {
-                  toggleTheme(themeOption.id);
-                  setIsOpen(false);
-                }}
-                className="w-full px-4 py-2 flex items-center space-x-2 transition-colors duration-200"
-                style={{
-                  backgroundColor: currentThemeName === themeOption.id 
-                    ? currentTheme.colors.primary[500] 
-                    : 'transparent',
-                  color: currentThemeName === themeOption.id 
-                    ? 'white' 
-                    : currentTheme.colors.text
-                }}
-                whileHover={{ x: 4 }}
-              >
-                <span>{getThemeIcon(themeOption.id)}</span>
-                <span>{themeOption.name}</span>
-              </motion.button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {isOpen && (
+        <div
+          className="absolute right-0 mt-2 w-48 rounded-lg shadow-lg overflow-hidden z-50 bg-opacity-80 backdrop-blur-md"
+          style={dropdownStyle}
+        >
+          {availableThemes.map((themeOption) => (
+            <button
+              key={themeOption.id}
+              onClick={() => {
+                toggleTheme(themeOption.id);
+                setIsOpen(false);
+              }}
+              className={`w-full px-4 py-2 text-left hover:bg-opacity-50 transition-colors duration-200 ${
+                currentThemeName === themeOption.id ? 'bg-opacity-30' : ''
+              }`}
+              style={{
+                backgroundColor: currentThemeName === themeOption.id ? theme.colors.accent : 'transparent',
+                color: theme.colors.text
+              }}
+            >
+              {themeOption.name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
