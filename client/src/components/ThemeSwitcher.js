@@ -72,20 +72,14 @@ const ThemeSwitcher = () => {
         whileHover="hover"
         whileTap="tap"
         onClick={() => setIsOpen(!isOpen)}
-        className={`
-          px-4 py-2 rounded-lg
-          flex items-center space-x-2
-          transition-colors duration-200
-          bg-opacity-80 backdrop-blur-md
-          bg-${theme.colors.card}
-          text-${theme.colors.text}
-          border border-${theme.colors.border}
-          hover:border-${theme.colors.primary[500]}
-          focus:outline-none focus:ring-2 focus:ring-${theme.colors.primary[500]}
-        `}
+        className="px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors duration-200"
         style={{
+          backgroundColor: theme.colors.card,
+          color: theme.colors.text,
+          border: `1px solid ${theme.colors.border}`,
           boxShadow: theme.effects?.cardShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-          backdropFilter: 'blur(10px)'
+          backdropFilter: 'blur(10px)',
+          opacity: 0.8
         }}
       >
         <span>{getThemeIcon(currentThemeName)}</span>
@@ -99,18 +93,13 @@ const ThemeSwitcher = () => {
             initial="hidden"
             animate="visible"
             exit="exit"
-            className={`
-              absolute right-0 mt-2 w-48
-              rounded-lg overflow-hidden
-              bg-opacity-80 backdrop-blur-md
-              bg-${theme.colors.card}
-              border border-${theme.colors.border}
-              shadow-lg
-              z-50
-            `}
+            className="absolute right-0 mt-2 w-48 rounded-lg overflow-hidden shadow-lg z-50"
             style={{
+              backgroundColor: theme.colors.card,
+              border: `1px solid ${theme.colors.border}`,
               boxShadow: theme.effects?.cardShadow || '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-              backdropFilter: 'blur(10px)'
+              backdropFilter: 'blur(10px)',
+              opacity: 0.8
             }}
           >
             {availableThemes.map((themeOption) => (
@@ -120,12 +109,15 @@ const ThemeSwitcher = () => {
                   toggleTheme(themeOption.id);
                   setIsOpen(false);
                 }}
-                className={`
-                  w-full px-4 py-2
-                  flex items-center space-x-2
-                  transition-colors duration-200
-                  ${currentThemeName === themeOption.id ? `bg-${theme.colors.primary[500]} text-white` : `hover:bg-${theme.colors.primary[50]}`}
-                `}
+                className="w-full px-4 py-2 flex items-center space-x-2 transition-colors duration-200"
+                style={{
+                  backgroundColor: currentThemeName === themeOption.id 
+                    ? theme.colors.primary[500] 
+                    : 'transparent',
+                  color: currentThemeName === themeOption.id 
+                    ? 'white' 
+                    : theme.colors.text
+                }}
                 whileHover={{ x: 4 }}
               >
                 <span>{getThemeIcon(themeOption.id)}</span>
