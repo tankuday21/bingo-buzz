@@ -1,73 +1,52 @@
+import { keyframes } from '@emotion/react';
+
+const twinkle = keyframes`
+  0% { opacity: 0.3; }
+  50% { opacity: 1; }
+  100% { opacity: 0.3; }
+`;
+
 export const themes = {
   default: {
-    name: 'Default',
+    name: "Classic Light",
     colors: {
-      primary: {
-        50: '#f0f9ff',
-        100: '#e0f2fe',
-        500: '#0ea5e9',
-        600: '#0284c7',
-        700: '#0369a1'
-      },
-      accent: {
-        50: '#f0fdfa',
-        100: '#ccfbf1',
-        500: '#14b8a6',
-        600: '#0d9488',
-        700: '#0f766e'
-      },
-      success: {
-        50: '#f0fdf4',
-        100: '#dcfce7',
-        500: '#22c55e',
-        600: '#16a34a',
-        700: '#15803d'
-      },
-      background: 'white',
-      card: 'rgba(255, 255, 255, 0.8)',
-      text: '#1f2937',
-      border: '#e5e7eb'
+      primary: "#4F46E5",
+      accent: "#3B82F6",
+      success: "#10B981",
+      background: "#F3F4F6",
+      card: "#FFFFFF",
+      text: "#1F2937",
+      border: "#E5E7EB"
     },
     effects: {
-      cardShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-      glassMorphism: 'backdrop-filter: blur(10px)',
-      borderRadius: '0.5rem'
+      cardShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+      glassMorphism: "rgba(255, 255, 255, 0.8)",
+      borderRadius: "1rem",
+      transition: "all 0.3s ease",
+      hover: "transform: scale(1.02)",
+      active: "transform: scale(0.98)"
     }
   },
   neon: {
-    name: 'Neon',
+    name: "Neon Nights",
     colors: {
-      primary: {
-        50: '#fdf4ff',
-        100: '#fae8ff',
-        500: '#d946ef',
-        600: '#c026d3',
-        700: '#a21caf'
-      },
-      accent: {
-        50: '#f5f3ff',
-        100: '#ede9fe',
-        500: '#8b5cf6',
-        600: '#7c3aed',
-        700: '#6d28d9'
-      },
-      success: {
-        50: '#ecfdf5',
-        100: '#d1fae5',
-        500: '#10b981',
-        600: '#059669',
-        700: '#047857'
-      },
-      background: '#0f172a',
-      card: 'rgba(15, 23, 42, 0.8)',
-      text: '#f8fafc',
-      border: '#1e293b'
+      primary: "#FF00FF",
+      accent: "#00FFFF",
+      success: "#39FF14",
+      background: "#0D0D0D",
+      card: "rgba(20, 20, 20, 0.8)",
+      text: "#FFFFFF",
+      border: "#FF00FF"
     },
     effects: {
-      cardShadow: '0 0 15px rgba(217, 70, 239, 0.3)',
-      glassMorphism: 'backdrop-filter: blur(15px)',
-      borderRadius: '0.75rem',
-      glow: 'text-shadow: 0 0 10px currentColor'
+      cardShadow: "0 0 15px rgba(255, 0, 255, 0.5), 0 0 30px rgba(255, 0, 255, 0.3)",
+      glassMorphism: "rgba(20, 20, 20, 0.6)",
+      borderRadius: "0.5rem",
+      glow: "0 0 10px currentColor",
+      neonText: "0 0 5px currentColor, 0 0 10px currentColor, 0 0 20px currentColor",
+      borderGlow: "0 0 5px #FF00FF, 0 0 10px #FF00FF",
+      hover: "transform: scale(1.05); filter: brightness(1.2)",
+      active: "transform: scale(0.95); filter: brightness(0.8)"
     }
   },
   retro: {
@@ -141,110 +120,74 @@ export const themes = {
     }
   },
   galaxy: {
-    name: 'Galaxy',
+    name: "Cosmic Galaxy",
     colors: {
-      primary: {
-        50: '#f5f3ff',
-        100: '#ede9fe',
-        500: '#8b5cf6',
-        600: '#7c3aed',
-        700: '#6d28d9'
-      },
-      accent: {
-        50: '#eff6ff',
-        100: '#dbeafe',
-        500: '#3b82f6',
-        600: '#2563eb',
-        700: '#1d4ed8'
-      },
-      success: {
-        50: '#ecfdf5',
-        100: '#d1fae5',
-        500: '#10b981',
-        600: '#059669',
-        700: '#047857'
-      },
-      background: '#030712',
-      card: 'rgba(17, 24, 39, 0.8)',
-      text: '#f8fafc',
-      border: '#312e81'
+      primary: "#8B5CF6",
+      accent: "#6366F1",
+      success: "#34D399",
+      background: "#0F172A",
+      card: "rgba(30, 41, 59, 0.8)",
+      text: "#F8FAFC",
+      border: "#4F46E5"
     },
     effects: {
-      cardShadow: '0 0 20px rgba(139, 92, 246, 0.3)',
-      glassMorphism: 'backdrop-filter: blur(20px)',
-      borderRadius: '1rem',
-      stars: 'background-image: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px)'
+      cardShadow: "0 0 20px rgba(139, 92, 246, 0.3), 0 0 40px rgba(99, 102, 241, 0.2)",
+      glassMorphism: "rgba(30, 41, 59, 0.6)",
+      borderRadius: "1rem",
+      stars: `
+        radial-gradient(1px 1px at 20px 30px, white, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 40px 70px, white, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 50px 160px, white, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 90px 40px, white, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 130px 80px, white, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 160px 120px, white, rgba(0,0,0,0))
+      `,
+      starAnimation: `${twinkle} 3s infinite`,
+      nebula: "linear-gradient(45deg, rgba(139, 92, 246, 0.2), rgba(99, 102, 241, 0.2))",
+      hover: "transform: scale(1.03); filter: brightness(1.1)",
+      active: "transform: scale(0.97); filter: brightness(0.9)"
     }
   },
   midnight: {
-    name: 'Midnight',
+    name: "Midnight Dreams",
     colors: {
-      primary: {
-        50: '#eef2ff',
-        100: '#e0e7ff',
-        500: '#6366f1',
-        600: '#4f46e5',
-        700: '#4338ca'
-      },
-      accent: {
-        50: '#f5f3ff',
-        100: '#ede9fe',
-        500: '#8b5cf6',
-        600: '#7c3aed',
-        700: '#6d28d9'
-      },
-      success: {
-        50: '#ecfdf5',
-        100: '#d1fae5',
-        500: '#10b981',
-        600: '#059669',
-        700: '#047857'
-      },
-      background: '#0f172a',
-      card: 'rgba(30, 41, 59, 0.8)',
-      text: '#f8fafc',
-      border: '#1e293b'
+      primary: "#4F46E5",
+      accent: "#818CF8",
+      success: "#34D399",
+      background: "#1E1B4B",
+      card: "rgba(30, 27, 75, 0.9)",
+      text: "#E0E7FF",
+      border: "#6366F1"
     },
     effects: {
-      cardShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)',
-      glassMorphism: 'backdrop-filter: blur(12px)',
-      borderRadius: '0.5rem'
+      cardShadow: "0 0 20px rgba(99, 102, 241, 0.2)",
+      glassMorphism: "rgba(30, 27, 75, 0.7)",
+      borderRadius: "1rem",
+      moonGlow: "0 0 20px rgba(224, 231, 255, 0.2)",
+      nightSky: "radial-gradient(circle at top right, #4F46E5, transparent)",
+      hover: "transform: scale(1.03); filter: brightness(1.1)",
+      active: "transform: scale(0.97); filter: brightness(0.9)"
     }
   },
   crystal: {
-    name: 'Crystal',
+    name: "Crystal Clear",
     colors: {
-      primary: {
-        50: '#f0f9ff',
-        100: '#e0f2fe',
-        500: '#0ea5e9',
-        600: '#0284c7',
-        700: '#0369a1'
-      },
-      accent: {
-        50: '#f0fdfa',
-        100: '#ccfbf1',
-        500: '#14b8a6',
-        600: '#0d9488',
-        700: '#0f766e'
-      },
-      success: {
-        50: '#f0fdf4',
-        100: '#dcfce7',
-        500: '#22c55e',
-        600: '#16a34a',
-        700: '#15803d'
-      },
-      background: '#f8fafc',
-      card: 'rgba(255, 255, 255, 0.7)',
-      text: '#0f172a',
-      border: '#e2e8f0'
+      primary: "#7DD3FC",
+      accent: "#38BDF8",
+      success: "#34D399",
+      background: "#EFF6FF",
+      card: "rgba(255, 255, 255, 0.7)",
+      text: "#1E3A8A",
+      border: "#93C5FD"
     },
     effects: {
-      cardShadow: '0 8px 32px rgba(31, 41, 55, 0.1)',
-      glassMorphism: 'backdrop-filter: blur(20px)',
-      borderRadius: '1rem',
-      shimmer: 'background: linear-gradient(45deg, transparent 25%, rgba(255,255,255,0.1) 50%, transparent 75%)'
+      cardShadow: "0 0 15px rgba(147, 197, 253, 0.3), 0 0 30px rgba(147, 197, 253, 0.2)",
+      glassMorphism: "rgba(255, 255, 255, 0.5)",
+      borderRadius: "1.5rem",
+      prism: "linear-gradient(135deg, rgba(125, 211, 252, 0.2), rgba(56, 189, 248, 0.2))",
+      shimmer: "linear-gradient(45deg, transparent 0%, rgba(255, 255, 255, 0.4) 50%, transparent 100%)",
+      hover: "transform: scale(1.02); backdrop-filter: blur(12px)",
+      active: "transform: scale(0.98); backdrop-filter: blur(8px)"
     }
   },
   festive: {

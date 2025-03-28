@@ -21,18 +21,89 @@ const emojiMap = {
 
 const BingoGrid = ({ 
   grid, 
-  marked, 
-  onMarkNumber, 
-  isMyTurn, 
+  size, 
+  onCellClick, 
+  markedCells, 
   winningLines,
   symbols,
   customSymbols
 }) => {
   const { theme } = useContext(ThemeContext);
+  const gridSize = parseInt(size);
+
+  const containerVariants = {
+    hidden: { opacity: 0, scale: 0.9 },
+    visible: {
+      opacity: 1,
+      scale: 1,
+      transition: {
+        duration: 0.5,
+        staggerChildren: 0.05
+      }
+    }
+  };
+
+  const cellVariants = {
+    hidden: { opacity: 0, scale: 0.8 },
+    visible: {
+      opacity: 1,
+      scale: 1,
+      transition: { duration: 0.3 }
+    },
+    hover: {
+      scale: 1.05,
+      boxShadow: theme.effects?.cardShadow || '0 4px 6px rgba(0,0,0,0.1)',
+      transition: { duration: 0.2 }
+    },
+    tap: { scale: 0.95 }
+  };
+
+  const markVariants = {
+    initial: { scale: 0, opacity: 0 },
+    animate: { 
+      scale: 1, 
+      opacity: 1,
+      transition: {
+        type: "spring",
+        stiffness: 500,
+        damping: 30
+      }
+    }
+  };
+
+  const getWinningLineStyle = (index) => {
+    if (!winningLines?.includes(index)) return {};
+    
+    return {
+      backgroundColor: `${theme.colors.success}33`,
+      boxShadow: `0 0 15px ${theme.colors.success}66`,
+      border: `2px solid ${theme.colors.success}`,
+    };
+  };
+
+  const getCellStyle = (index) => {
+    const baseStyle = {
+      backgroundColor: theme.colors.card,
+      color: theme.colors.text,
+      border: `2px solid ${theme.colors.border}`,
+      boxShadow: theme.effects?.cardShadow || 'none',
+    };
+
+    if (markedCells?.includes(index)) {
+      return {
+        ...baseStyle,
+        backgroundColor: `${theme.colors.primary}33`,
+        border: `2px solid ${theme.colors.primary}`,
+        boxShadow: `0 0 10px ${theme.colors.primary}33`,
+      };
+    }
+
+    return baseStyle;
+  };
 
   if (!grid || grid.length === 0) {
     // Show debug info when grid is missing but game may have started
-    console.error("Grid is empty or missing:", { grid, isMyTurn, gameStarted: isMyTurn !== undefined });
+    console.error("Grid is empty or missing:", { grid, size, gameStarted: size !== undefined });
     
     return (
       <div 
@@ -100,115 +171,55 @@ const BingoGrid = ({
   // Calculate cell size based on grid dimensions
   const cellSize = `calc((100% - ${(grid.length - 1) * 0.5}rem) / ${grid.length})`;
 
-  // Cell animation variants
-  const cellVariants = {
-    unmarked: {
-      scale: 1,
-      backgroundColor: theme.colors.card,
-      transition: { duration: 0.2 }
-    },
-    marked: {
-      scale: 1.05,
-      backgroundColor: theme.colors.primary[500],
-      transition: { 
-        type: "spring",
-        stiffness: 300,
-        damping: 20
-      }
-    },
-    winning: {
-      scale: 1.1,
-      backgroundColor: theme.colors.success[500],
-      transition: { 
-        type: "spring",
-        stiffness: 300,
-        damping: 20
-      }
-    }
-  };
-
-  // Get cell state for animations
-  const getCellState = (i, j, number) => {
-    const isMarked = marked.has(number);
-    const isWinningCell = winningLines?.some(line => {
-      if (line.type === 'row' && line.index === i) return true;
-      if (line.type === 'col' && line.index === j) return true;
-      if (line.type === 'diag' && line.index === 0 && i === j) return true;
-      if (line.type === 'diag' && line.index === 1 && i === (grid.length - 1 - j)) return true;
-      return false;
-    });
-
-    return isWinningCell ? 'winning' : isMarked ? 'marked' : 'unmarked';
-  };
-
   return (
-    <div 
-      className="rounded-lg p-4"
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      className="grid gap-2 p-4"
       style={{
-        background: theme.colors.card,
-        boxShadow: theme.effects.cardShadow,
-        backdropFilter: theme.effects.glassMorphism
+        gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
       }}
     >
-      <div 
-        className="grid gap-2" 
-        style={{ 
-          gridTemplateColumns: `repeat(${grid.length}, ${cellSize})`,
-          gridTemplateRows: `repeat(${grid.length}, ${cellSize})`
-        }}
-      >
-        {processedGrid.map((row, i) => 
-          row.map((number, j) => {
-            const cellState = getCellState(i, j, number);
-            const isMarked = marked.has(number);
-
-            return (
-              <motion.button
-                key={`${i}-${j}`}
-                onClick={() => onMarkNumber(number)}
-                disabled={!isMyTurn || isMarked}
-                variants={cellVariants}
-                initial="unmarked"
-                animate={cellState}
-                whileHover={!isMarked && isMyTurn ? { scale: 1.05 } : {}}
-                whileTap={!isMarked && isMyTurn ? { scale: 0.95 } : {}}
-                className={`
-                  relative aspect-square flex items-center justify-center
-                  text-lg sm:text-xl font-semibold rounded-lg
-                  transition-all duration-200 ease-in-out
-                  ${isMyTurn && !isMarked ? 'cursor-pointer' : 'cursor-not-allowed'}
-                  ${cellState === 'winning' ? 'text-white' : 
-                    cellState === 'marked' ? 'text-white' : 
-                    theme.colors.text}
-                `}
+      {processedGrid.map((number, index) => (
+        <motion.button
+          key={index}
+          variants={cellVariants}
+          whileHover="hover"
+          whileTap="tap"
+          onClick={() => onCellClick(index)}
+          className={`
+            aspect-square rounded-lg flex items-center justify-center
+            text-lg sm:text-xl font-semibold relative overflow-hidden
+            transition-colors duration-300 backdrop-blur-sm bg-opacity-80
+          `}
+          style={{
+            ...getCellStyle(index),
+            ...getWinningLineStyle(index)
+          }}
+        >
+          {markedCells?.includes(index) && (
+            <motion.div
+              variants={markVariants}
+              initial="initial"
+              animate="animate"
+              className="absolute inset-0 flex items-center justify-center"
+              style={{
+                backgroundColor: `${theme.colors.primary}1a`
+              }}
+            >
+              <div 
+                className="w-3/4 h-3/4 rounded-full"
                 style={{
-                  fontSize: `calc(16px + (24 - 16) * ((100vw - 320px) / (1600 - 320)))`,
-                  border: `2px solid ${theme.colors.border}`,
-                  boxShadow: theme.effects.cardShadow
+                  background: `radial-gradient(circle, ${theme.colors.primary}33 0%, transparent 70%)`
                 }}
-              >
-                {number}
-                {cellState === 'marked' && (
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="absolute inset-0 flex items-center justify-center"
-                  >
-                    <div 
-                      className="absolute inset-0 rounded-lg"
-                      style={{
-                        background: theme.colors.primary[500],
-                        opacity: 0.2
-                      }}
-                    />
-                  </motion.div>
-                )}
-              </motion.button>
-            );
-          })
-        )}
-      </div>
-    </div>
+              />
+            </motion.div>
+          )}
+          <span className="relative z-10">{number}</span>
+        </motion.button>
+      ))}
+    </motion.div>
   );
 };
 

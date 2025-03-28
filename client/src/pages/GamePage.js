@@ -45,6 +45,46 @@ const GamePage = () => {
   const hasJoinedRef = useRef(false);
   const timerRef = useRef(null);
   
+  const pageVariants = {
+    initial: { opacity: 0, y: 20 },
+    animate: { 
+      opacity: 1, 
+      y: 0,
+      transition: {
+        duration: 0.5,
+        staggerChildren: 0.2
+      }
+    },
+    exit: { 
+      opacity: 0, 
+      y: -20,
+      transition: { duration: 0.3 }
+    }
+  };
+
+  const containerVariants = {
+    initial: { opacity: 0, scale: 0.95 },
+    animate: { 
+      opacity: 1, 
+      scale: 1,
+      transition: {
+        duration: 0.3
+      }
+    }
+  };
+
+  const headerVariants = {
+    initial: { opacity: 0, y: -20 },
+    animate: { 
+      opacity: 1, 
+      y: 0,
+      transition: {
+        duration: 0.3,
+        delay: 0.1
+      }
+    }
+  };
+  
   // Join game on mount
   useEffect(() => {
     if (!username) {
@@ -526,262 +566,114 @@ const GamePage = () => {
   };
   
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Sound Effects */}
-      <audio ref={audioRef} src="/sounds/ding.mp3" />
-      
-      {/* Confetti Effect */}
-      {showConfetti && <Confetti recycle={false} numberOfPieces={500} />}
-      
-      {/* Header */}
-      <header 
-        className="p-4"
-        style={{
-          background: `linear-gradient(to right, ${theme.colors.primary[600]}, ${theme.colors.accent[600]})`,
-          color: 'white'
-        }}
-      >
-        <div className="container mx-auto flex flex-wrap justify-between items-center">
-          <motion.h1 
-            className="text-3xl font-bold"
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
+    <motion.div
+      variants={pageVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      className="min-h-screen p-4 sm:p-6 lg:p-8"
+      style={{
+        background: theme.colors.background,
+        backgroundImage: theme.effects?.stars,
+        color: theme.colors.text
+      }}
+    >
+      <div className="max-w-7xl mx-auto">
+        <motion.div
+          variants={headerVariants}
+          className="flex justify-between items-center mb-6"
+        >
+          <h1 className="text-2xl sm:text-3xl font-bold">
+            Bingo Room: {roomCode}
+          </h1>
+          <ThemeSwitcher />
+        </motion.div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <motion.div
+            variants={containerVariants}
+            className="lg:col-span-2"
           >
-            Bingo Buzz
-          </motion.h1>
-          
-          <div className="flex items-center space-x-4">
-            {/* Room Code */}
-            <motion.div 
-              className="p-2 rounded flex items-center"
+            <div
+              className="rounded-xl p-6 backdrop-blur-md bg-opacity-80"
               style={{
-                background: theme.colors.card,
-                boxShadow: theme.effects.cardShadow,
-                backdropFilter: theme.effects.glassMorphism
+                backgroundColor: theme.colors.card,
+                boxShadow: theme.effects?.cardShadow,
+                border: `2px solid ${theme.colors.border}`
               }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
             >
-              <span className="mr-2 font-mono font-bold" style={{ color: theme.colors.text }}>
-                {roomCode}
-              </span>
-              <button 
-                onClick={copyRoomCode}
-                style={{ color: theme.colors.primary[600] }}
-                className="hover:opacity-80"
-                title="Copy room code"
-              >
-                {copySuccess ? '✓' : '📋'}
-              </button>
-            </motion.div>
-            
-            <ThemeSwitcher />
-            
-            <motion.button
-              onClick={goHome}
-              className="px-3 py-1 rounded hover:opacity-80"
-              style={{
-                background: theme.colors.card,
-                color: theme.colors.primary[600]
-              }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              Exit
-            </motion.button>
-          </div>
-        </div>
-      </header>
-      
-      {/* Main content */}
-      <main className="flex-1 container mx-auto p-4">
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Left sidebar - Players */}
-          <motion.div 
-            className="lg:w-1/4 rounded-lg p-4"
-            style={{
-              background: theme.colors.card,
-              boxShadow: theme.effects.cardShadow,
-              backdropFilter: theme.effects.glassMorphism
-            }}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <h2 className="text-xl font-bold mb-4" style={{ color: theme.colors.text }}>Players</h2>
-            <PlayersList players={players} currentTurn={currentTurn} />
-            
-            {/* Host controls */}
-            {isHost && !gameStarted && (
-              <div className="mt-4">
-                <motion.button
-                  onClick={handleStartGame}
-                  className="w-full py-2 font-bold rounded transition-colors"
-                  style={{
-                    background: theme.colors.primary[600],
-                    color: 'white'
-                  }}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  Start Game
-                </motion.button>
-              </div>
-            )}
-            
-            {/* Game status */}
-            {gameStarted && (
-              <div className="mt-4">
-                <h3 className="font-semibold" style={{ color: theme.colors.text }}>Current Turn</h3>
-                <p style={{ 
-                  color: isMyTurn ? theme.colors.primary[600] : theme.colors.text,
-                  fontWeight: isMyTurn ? 'bold' : 'normal'
-                }}>
-                  {isMyTurn ? 'Your Turn' : `${currentTurnName}'s Turn`}
-                </p>
-                
-                <div className="mt-2">
-                  <Timer seconds={timer} />
+              <div className="mb-4 flex justify-between items-center">
+                <div className="flex items-center space-x-4">
+                  <h2 className="text-xl font-semibold">Your Grid</h2>
+                  {isMyTurn && (
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="px-3 py-1 rounded-full text-sm font-medium"
+                      style={{
+                        backgroundColor: theme.colors.primary,
+                        color: theme.colors.card
+                      }}
+                    >
+                      Your Turn!
+                    </motion.div>
+                  )}
                 </div>
+                <Timer timeLeft={timer} />
               </div>
-            )}
-          </motion.div>
-          
-          {/* Main game area */}
-          <motion.div 
-            className="lg:w-1/2 flex flex-col items-center"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-          >
-            {!gameStarted && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="rounded-lg p-6 mb-6 w-full"
-                style={{
-                  background: theme.colors.card,
-                  boxShadow: theme.effects.cardShadow,
-                  backdropFilter: theme.effects.glassMorphism
-                }}
-              >
-                <h2 className="text-2xl font-bold mb-4" style={{ color: theme.colors.text }}>
-                  Waiting for players
-                </h2>
-                <p style={{ color: theme.colors.text }}>
-                  {isHost ? 
-                    'Invite players to join using the room code, then press Start Game.' :
-                    'Waiting for the host to start the game...'
-                  }
-                </p>
-              </motion.div>
-            )}
-            
-            {/* Bingo Grid */}
-            <div className="w-full">
-              <BingoGrid 
-                grid={grid} 
-                marked={marked} 
-                onMarkNumber={gameStarted ? handleMarkNumber : undefined} 
+
+              <BingoGrid
+                grid={grid}
+                marked={marked}
+                onMarkNumber={gameStarted ? handleMarkNumber : undefined}
                 isMyTurn={isMyTurn && gameStarted}
                 winningLines={winningLines}
                 symbols={symbols}
               />
             </div>
           </motion.div>
-          
-          {/* Right sidebar - Game Info */}
-          <motion.div 
-            className="lg:w-1/4 rounded-lg p-4"
-            style={{
-              background: theme.colors.card,
-              boxShadow: theme.effects.cardShadow,
-              backdropFilter: theme.effects.glassMorphism
-            }}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
+
+          <motion.div
+            variants={containerVariants}
+            className="lg:col-span-1"
           >
-            <h2 className="text-xl font-bold mb-4" style={{ color: theme.colors.text }}>
-              Marked Numbers
-            </h2>
-            {markedHistory.length > 0 ? (
-              <div className="max-h-80 overflow-y-auto">
-                {markedHistory.map((item, index) => (
-                  <motion.div 
-                    key={index} 
-                    className="mb-1 p-2 border-b"
-                    style={{ borderColor: theme.colors.border }}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <span className="font-bold" style={{ color: theme.colors.primary[600] }}>
-                      {item.number}
-                    </span>
-                    <span style={{ color: theme.colors.text }}> by {item.player}</span>
-                    {item.automatic && (
-                      <span className="text-xs" style={{ color: theme.colors.text, opacity: 0.7 }}>
-                        {' '}(auto)
-                      </span>
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            ) : (
-              <p style={{ color: theme.colors.text, opacity: 0.7 }}>
-                No numbers marked yet
-              </p>
-            )}
-            
-            {/* Theme & Symbols Settings */}
-            <div className="mt-6">
-              <h3 className="font-bold mb-2" style={{ color: theme.colors.text }}>
-                Grid Display
-              </h3>
-              <div className="flex space-x-2 mb-2">
-                <motion.button 
-                  onClick={() => setSymbols('numbers')}
-                  className="px-3 py-1 rounded"
-                  style={{
-                    background: symbols === 'numbers' ? theme.colors.primary[600] : theme.colors.primary[50],
-                    color: symbols === 'numbers' ? 'white' : theme.colors.text
-                  }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Numbers
-                </motion.button>
-                <motion.button 
-                  onClick={() => setSymbols('emojis')}
-                  className="px-3 py-1 rounded"
-                  style={{
-                    background: symbols === 'emojis' ? theme.colors.primary[600] : theme.colors.primary[50],
-                    color: symbols === 'emojis' ? 'white' : theme.colors.text
-                  }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  Emojis
-                </motion.button>
-              </div>
+            <div
+              className="rounded-xl p-6 backdrop-blur-md bg-opacity-80"
+              style={{
+                backgroundColor: theme.colors.card,
+                boxShadow: theme.effects?.cardShadow,
+                border: `2px solid ${theme.colors.border}`
+              }}
+            >
+              <h2 className="text-xl font-semibold mb-4">Players</h2>
+              <PlayersList
+                players={players}
+                currentTurn={currentTurn}
+                winners={winner ? [winner] : []}
+              />
             </div>
+
+            <AnimatePresence>
+              {gameStarted && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="mt-4 p-4 rounded-xl text-center font-medium"
+                  style={{
+                    backgroundColor: theme.colors.accent,
+                    color: theme.colors.card,
+                    boxShadow: theme.effects?.cardShadow
+                  }}
+                >
+                  {currentTurnName ? `${currentTurnName}'s Turn` : 'Waiting for the host to start the game...'}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         </div>
-      </main>
-      
-      {/* Winner Modal */}
-      <AnimatePresence>
-        {winner && (
-          <WinnerModal 
-            winner={winner} 
-            onClose={() => setWinner(null)} 
-            onExitGame={handleExitGame} 
-          />
-        )}
-      </AnimatePresence>
-    </div>
+      </div>
+    </motion.div>
   );
 };
 
