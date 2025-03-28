@@ -249,6 +249,15 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    mongodb: mongoConnected ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Socket.io logic
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
