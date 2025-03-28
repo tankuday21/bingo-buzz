@@ -54,6 +54,9 @@ const GamePage = () => {
   // Add socket connection status tracking
   const [socketConnected, setSocketConnected] = useState(socket.connected);
   
+  // Queue for pending marked numbers that arrive before grid is ready
+  const pendingMarkedNumbersRef = useRef([]);
+  
   const pageVariants = {
     initial: { opacity: 0, y: 20 },
     animate: { 
@@ -282,9 +285,27 @@ const GamePage = () => {
     };
   }, [navigate]);
   
+  // Process any queued marked numbers whenever the grid changes
+  useEffect(() => {
+    if (grid && grid.length > 0 && pendingMarkedNumbersRef.current.length > 0) {
+      console.log(`Grid now available, processing ${pendingMarkedNumbersRef.current.length} queued numbers`);
+      
+      // Process all pending numbers
+      const pendingNumbers = [...pendingMarkedNumbersRef.current];
+      // Clear the queue
+      pendingMarkedNumbersRef.current = [];
+      
+      // Process each pending number
+      pendingNumbers.forEach(pendingNumber => {
+        console.log('Processing queued number:', pendingNumber);
+        handleNumberMarked(pendingNumber);
+      });
+    }
+  }, [grid]);
+  
   // Event handler functions
   const handleGridAssigned = (newGrid) => {
-    console.log('Grid assigned event received:', newGrid);
+    console.log('Grid assigned event received:', JSON.stringify(newGrid));
     if (!newGrid || !Array.isArray(newGrid) || newGrid.length === 0) {
       console.error('Invalid grid received:', newGrid);
       return;
@@ -292,17 +313,25 @@ const GamePage = () => {
     
     // Deep copy the grid to avoid reference issues
     const gridCopy = JSON.parse(JSON.stringify(newGrid));
-    console.log('Setting grid state with valid grid data:', gridCopy);
+    console.log('Setting grid state with valid grid data. Grid size:', 
+                Array.isArray(gridCopy[0]) ? 
+                `${gridCopy.length}x${gridCopy[0].length}` : 
+                `${gridCopy.length} (flat array)`);
     
     // Log the previous grid state for debugging
-    console.log('Previous grid state:', grid);
+    console.log('Previous grid state empty:', !grid || grid.length === 0);
     
-    setGrid(gridCopy);
+    // Force immediate state update via callback to ensure it's fully processed
+    setGrid(() => gridCopy);
     
-    // Request any missed marked numbers
+    // Request any missed marked numbers from the server after grid initialization
     if (roomCode) {
       console.log('Requesting any missed marked numbers after grid assignment');
-      socket.emit('request-marked-numbers', { roomCode });
+      setTimeout(() => {
+        if (socketConnected) {
+          socket.emit('request-marked-numbers', { roomCode });
+        }
+      }, 500); // Wait 500ms to ensure grid state is updated
     }
   };
   
@@ -332,8 +361,26 @@ const GamePage = () => {
     
     // IMPORTANT: Make sure grid is set correctly from the joined-room event
     if (data.grid && Array.isArray(data.grid)) {
-      console.log('Setting grid from joined-room event:', data.grid);
-      setGrid(data.grid);
+      console.log('Setting grid from joined-room event. Grid size:', 
+                  Array.isArray(data.grid[0]) ? 
+                  `${data.grid.length}x${data.grid[0].length}` : 
+                  `${data.grid.length} (flat array)`);
+      
+      // Deep copy the grid to avoid reference issues and ensure state updates
+      const gridCopy = JSON.parse(JSON.stringify(data.grid));
+      setGrid(() => gridCopy); // Use callback form to ensure immediate state update
+      
+      // Process any pending marked numbers after a short delay to ensure grid state update
+      setTimeout(() => {
+        if (pendingMarkedNumbersRef.current.length > 0) {
+          console.log(`Processing ${pendingMarkedNumbersRef.current.length} queued numbers after joined-room`);
+          const pendingNumbers = [...pendingMarkedNumbersRef.current];
+          pendingMarkedNumbersRef.current = [];
+          pendingNumbers.forEach(pendingNumber => {
+            handleNumberMarked(pendingNumber);
+          });
+        }
+      }, 500);
     } else {
       console.warn('No valid grid data in joined-room event:', data);
     }
@@ -421,11 +468,38 @@ const GamePage = () => {
     setGameStarted(true);
     setWaitingForPlayers(false);
     
-    if (data.grid) setGrid(data.grid);
+    // Handle grid initialization if included in game-started event
+    if (data.grid && Array.isArray(data.grid)) {
+      console.log('Setting grid from game-started event. Grid size:', 
+                  Array.isArray(data.grid[0]) ? 
+                  `${data.grid.length}x${data.grid[0].length}` : 
+                  `${data.grid.length} (flat array)`);
+      
+      // Deep copy the grid to avoid reference issues
+      const gridCopy = JSON.parse(JSON.stringify(data.grid));
+      setGrid(() => gridCopy);
+      
+      // If our grid is just now being set, check for any queued marked numbers
+      setTimeout(() => {
+        if (pendingMarkedNumbersRef.current.length > 0) {
+          console.log(`Processing ${pendingMarkedNumbersRef.current.length} queued numbers after game start`);
+          const pendingNumbers = [...pendingMarkedNumbersRef.current];
+          pendingMarkedNumbersRef.current = [];
+          pendingNumbers.forEach(pendingNumber => {
+            handleNumberMarked(pendingNumber);
+          });
+        }
+      }, 500);
+    } else if (!grid || grid.length === 0) {
+      console.warn('No grid data in game-started event and no grid currently set:', data);
+      // Request grid from server if we don't have one
+      socket.emit('request-grid', { roomCode });
+    }
+    
     if (data.currentTurn) {
       setCurrentTurn(data.currentTurn);
       setCurrentTurnName(data.currentTurn);
-      setIsMyTurn(data.currentTurn === username);
+      setIsMyTurn(data.currentTurn === socket.id);
     }
     
     // Reset UI state
@@ -435,7 +509,7 @@ const GamePage = () => {
     setTimer(15);
     
     toast.success('Game started!');
-    setGameMessage(`Game started! ${data.currentTurn}'s turn`);
+    setGameMessage(`Game started! ${data.currentTurn === socket.id ? 'Your' : `${data.player?.username || 'Someone else'}'s`} turn`);
     
     // Play start sound
     if (audioRef.current) {
@@ -489,19 +563,17 @@ const GamePage = () => {
     
     // Check if grid is properly loaded
     if (!grid || !grid.length) {
-      console.warn(`Grid not yet loaded when receiving number ${numberToFind}, queueing for later processing`);
-      // Store this number to process later when grid is available
-      const pendingNumber = { number: numberToFind, markedBy, player, automatic };
+      console.warn(`Grid not yet loaded when receiving number ${numberToFind}, adding to queue for later processing`);
       
-      // Set a timeout to retry processing this number once the grid is available
-      setTimeout(() => {
-        if (grid && grid.length) {
-          console.log('Grid now available, processing queued number:', pendingNumber);
-          handleNumberMarked(pendingNumber);
-        } else {
-          console.error('Grid still not available after delay, cannot process number:', pendingNumber);
-        }
-      }, 1000);
+      // Add this number to the pending queue
+      pendingMarkedNumbersRef.current.push({ 
+        number: numberToFind, 
+        markedBy, 
+        player, 
+        automatic,
+        queuedAt: Date.now() 
+      });
+      
       return;
     }
     
