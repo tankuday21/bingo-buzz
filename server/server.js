@@ -948,6 +948,41 @@ io.on('connection', (socket) => {
       readyPlayers: game.readyPlayers
     });
   });
+
+  // Handle request for already marked numbers (when a client gets its grid or reconnects)
+  socket.on('request-marked-numbers', ({ roomCode }) => {
+    console.log(`Player ${socket.id} requesting marked numbers for room ${roomCode}`);
+    const game = games[roomCode];
+    
+    if (!game) {
+      return socket.emit('error', 'Room not found');
+    }
+    
+    // Find the player
+    const player = game.players.find(p => p.id === socket.id);
+    if (!player) {
+      return socket.emit('error', 'Player not found in game');
+    }
+    
+    if (!game.markedNumbers || game.markedNumbers.size === 0) {
+      console.log(`No marked numbers to send for room ${roomCode}`);
+      return;
+    }
+    
+    // Convert the Set to an Array for sending
+    const markedNumbersArray = Array.from(game.markedNumbers);
+    console.log(`Sending ${markedNumbersArray.length} marked numbers to player ${socket.id} in room ${roomCode}:`, markedNumbersArray);
+    
+    // Send each marked number to the client
+    for (const number of markedNumbersArray) {
+      socket.emit('number-marked', {
+        number,
+        markedBy: 'system-sync', // Special flag to indicate this is a sync operation
+        player: null,
+        automatic: false
+      });
+    }
+  });
 });
 
 // Helper function to start a turn

@@ -289,8 +289,21 @@ const GamePage = () => {
       console.error('Invalid grid received:', newGrid);
       return;
     }
-    console.log('Setting grid state with valid grid data');
-    setGrid(newGrid);
+    
+    // Deep copy the grid to avoid reference issues
+    const gridCopy = JSON.parse(JSON.stringify(newGrid));
+    console.log('Setting grid state with valid grid data:', gridCopy);
+    
+    // Log the previous grid state for debugging
+    console.log('Previous grid state:', grid);
+    
+    setGrid(gridCopy);
+    
+    // Request any missed marked numbers
+    if (roomCode) {
+      console.log('Requesting any missed marked numbers after grid assignment');
+      socket.emit('request-marked-numbers', { roomCode });
+    }
   };
   
   // Fix player mapping in the waiting room section
@@ -316,6 +329,14 @@ const GamePage = () => {
       : [];
     
     setPlayers(normalizedPlayers);
+    
+    // IMPORTANT: Make sure grid is set correctly from the joined-room event
+    if (data.grid && Array.isArray(data.grid)) {
+      console.log('Setting grid from joined-room event:', data.grid);
+      setGrid(data.grid);
+    } else {
+      console.warn('No valid grid data in joined-room event:', data);
+    }
     
     // If the game is already in progress, skip waiting room
     if (data.gameStarted) {
@@ -466,8 +487,29 @@ const GamePage = () => {
       return;
     }
     
+    // Check if grid is properly loaded
+    if (!grid || !grid.length) {
+      console.warn(`Grid not yet loaded when receiving number ${numberToFind}, queueing for later processing`);
+      // Store this number to process later when grid is available
+      const pendingNumber = { number: numberToFind, markedBy, player, automatic };
+      
+      // Set a timeout to retry processing this number once the grid is available
+      setTimeout(() => {
+        if (grid && grid.length) {
+          console.log('Grid now available, processing queued number:', pendingNumber);
+          handleNumberMarked(pendingNumber);
+        } else {
+          console.error('Grid still not available after delay, cannot process number:', pendingNumber);
+        }
+      }, 1000);
+      return;
+    }
+    
     // Always find where this number is in our own grid, regardless of who marked it
     const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
+    
+    console.log('Current grid state:', grid);
+    console.log('Flat grid for searching:', flatGrid);
     
     // Find the correct cell index, ensuring type matching for comparison
     const localCellIndex = flatGrid.findIndex(cellNum => 
