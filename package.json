@@ -1,0 +1,21 @@
+{
+  "name": "bingo-buzz",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "start": "cd server && npm start",
+    "build": "cd client && npm run build",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm start",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "install:all": "npm install && cd client && npm install && cd ../server && npm install",
+    "test": "cd client && npm test && cd ../server && npm test"
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.1"
+  }
+} 
