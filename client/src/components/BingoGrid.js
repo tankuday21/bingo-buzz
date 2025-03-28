@@ -115,19 +115,15 @@ const BingoGrid = ({
                   relative aspect-square flex items-center justify-center
                   text-lg sm:text-xl font-semibold rounded-lg
                   transition-all duration-200 ease-in-out
-                  ${isWinningCell ? 'bg-success-100 border-success-500' : 'bg-gray-50 border-gray-200'}
-                  ${isMarked ? 'border-2' : 'border'}
-                  ${isMyTurn && !isMarked ? 'hover:bg-primary-50 hover:border-primary-500 cursor-pointer' : 'cursor-not-allowed'}
-                  ${isMarked ? 'text-success-600' : 'text-gray-800'}
+                  ${isWinningCell ? 'bg-success-500 text-white' : 
+                    isMarked ? 'bg-primary-500 text-white' : 'bg-gray-50'}
+                  ${isMyTurn && !isMarked ? 'hover:bg-primary-100 cursor-pointer' : 'cursor-not-allowed'}
+                  border-2 border-transparent
+                  ${isMyTurn && !isMarked ? 'hover:border-primary-500' : ''}
                 `}
                 style={{ fontSize: `calc(16px + (24 - 16) * ((100vw - 320px) / (1600 - 320)))` }}
               >
-                <span className={isMarked ? 'line-through' : ''}>{number}</span>
-                {isMarked && (
-                  <span className="absolute inset-0 flex items-center justify-center text-success-600 font-bold">
-                    {customSymbols?.[number] || symbols?.[number] || '✓'}
-                  </span>
-                )}
+                {number}
               </button>
             );
           })

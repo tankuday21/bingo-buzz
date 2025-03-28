@@ -31,8 +31,7 @@ const GamePage = () => {
   const [currentTurnName, setCurrentTurnName] = useState('');
   
   // UI state
-  const [symbols, setSymbols] = useState('numbers'); // 'numbers', 'emojis', 'custom'
-  const [customSymbols, setCustomSymbols] = useState('');
+  const [symbols, setSymbols] = useState('numbers'); // 'numbers' or 'emojis'
   const [isHost, setIsHost] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -653,7 +652,6 @@ const GamePage = () => {
                   isMyTurn={isMyTurn && gameStarted}
                   winningLines={winningLines}
                   symbols={symbols}
-                  customSymbols={customSymbols}
                 />
               )}
             </div>
@@ -678,7 +676,7 @@ const GamePage = () => {
             
             {/* Theme & Symbols Settings */}
             <div className="mt-6">
-              <h3 className="font-bold mb-2">Grid Symbols</h3>
+              <h3 className="font-bold mb-2">Grid Display</h3>
               <div className="flex space-x-2 mb-2">
                 <button 
                   onClick={() => setSymbols('numbers')}
@@ -692,26 +690,7 @@ const GamePage = () => {
                 >
                   Emojis
                 </button>
-                <button 
-                  onClick={() => setSymbols('custom')}
-                  className={`px-3 py-1 rounded ${symbols === 'custom' ? 'bg-primary-600 text-white' : 'bg-gray-200'}`}
-                >
-                  Custom
-                </button>
               </div>
-              
-              {symbols === 'custom' && (
-                <div className="mt-2">
-                  <input
-                    type="text"
-                    placeholder="Enter symbols (comma-separated)"
-                    value={customSymbols}
-                    onChange={(e) => setCustomSymbols(e.target.value)}
-                    className="w-full p-2 border rounded"
-                  />
-                  <p className="text-xs mt-1 text-gray-500">Example: 🐱,⭐,🍎,...</p>
-                </div>
-              )}
             </div>
           </div>
         </div>
