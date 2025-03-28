@@ -450,18 +450,17 @@ const GamePage = () => {
     }
   };
   
-  const handleNumberMarked = ({ cellIndex, number, markedBy, player, automatic }) => {
-    console.log('Number marked:', { cellIndex, number, markedBy, player });
+  const handleNumberMarked = ({ number, markedBy, player, automatic }) => {
+    console.log('Number marked event received:', { number, markedBy, player, automatic });
     
     if (!number) {
       console.error('No number provided in number-marked event');
       return;
     }
     
-    // Each player should find where this number is in THEIR OWN grid
-    // Don't use the cellIndex from the server directly
+    // Always find where this number is in our own grid, regardless of who marked it
     const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
-    const localCellIndex = flatGrid.indexOf(number);
+    const localCellIndex = flatGrid.indexOf(parseInt(number, 10));
     
     console.log(`Number ${number} received, found at position ${localCellIndex} in my grid`);
     
@@ -600,18 +599,24 @@ const GamePage = () => {
       return;
     }
     
-    // Get the number from the grid if not provided
-    if (!number && grid && grid.length > 0) {
+    // Make sure number is valid
+    let numberToMark = number;
+    if (!numberToMark && grid && grid.length > 0) {
       const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
-      number = flatGrid[cellIndex];
+      numberToMark = flatGrid[cellIndex];
     }
     
-    if (!number) {
+    // Convert to integer if it's a string
+    if (typeof numberToMark === 'string') {
+      numberToMark = parseInt(numberToMark, 10);
+    }
+    
+    if (!numberToMark || isNaN(numberToMark)) {
       console.error('No valid number found at index', cellIndex);
       return;
     }
     
-    console.log('Marking number:', number, 'at index:', cellIndex);
+    console.log('Marking number:', numberToMark, 'at index:', cellIndex);
     
     // Update UI immediately for better responsiveness
     if (!markedCells.includes(cellIndex)) {
@@ -621,11 +626,10 @@ const GamePage = () => {
     // Set marking flag to prevent multiple clicks
     setIsMarking(true);
     
-    // Send the mark to the server
+    // Send the mark to the server - only send the number, not the cellIndex
     socket.emit('mark-number', {
       roomCode,
-      number,
-      cellIndex
+      number: numberToMark
     });
     
     // Clear marking flag after a short delay

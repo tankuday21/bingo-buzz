@@ -687,11 +687,10 @@ io.on('connection', (socket) => {
       return socket.emit('error', 'Invalid number');
     }
     
-    // Mark the number
     try {
       console.log(`Player ${socket.id} (${player.username}) marking number ${number} in room ${roomCode}`);
       
-      // Add to marked numbers set
+      // Mark the number in the global set
       game.markedNumbers.add(number);
       game.lastMarkedNumber = number;
       game.lastMarkedTurn = game.turnIndex;
@@ -702,10 +701,10 @@ io.on('connection', (socket) => {
         game.timer = null;
       }
       
-      // Notify all players immediately
+      // Notify all players with the NUMBER, not just the cellIndex
+      // Each client will find where this number is in their own grid
       io.to(roomCode).emit('number-marked', {
-        number,
-        cellIndex,
+        number: number,  // This is the critical part - send the number to all clients
         markedBy: socket.id,
         player: player,
         automatic: false
@@ -806,7 +805,6 @@ io.on('connection', (socket) => {
           // Notify all players of the automatic marking
           io.to(roomCode).emit('number-marked', {
             number: randomNumber,
-            cellIndex: playerGrid.flat().indexOf(randomNumber), // Add cell index
             markedBy: socket.id,
             player: player,
             automatic: true
@@ -1018,19 +1016,18 @@ function startTurn(roomCode) {
     if (unmarked.length > 0) {
       // Select a random unmarked number from player's grid
       const randomNum = unmarked[Math.floor(Math.random() * unmarked.length)];
-      const cellIndex = flatGrid.indexOf(randomNum);
       
-      console.log(`Automatically marking number ${randomNum} at cell index ${cellIndex} for ${currentPlayer.username}`);
+      console.log(`Automatically marking number ${randomNum} for ${currentPlayer.username}`);
       
       // Mark the number
       game.markedNumbers.add(randomNum);
       game.lastMarkedNumber = randomNum;
       game.lastMarkedTurn = game.turnIndex;
       
-      // Notify all players with both number and cellIndex
+      // Notify all players with ONLY the number, not cellIndex
+      // Each client will find where this number is in their own grid
       io.to(roomCode).emit('number-marked', {
         number: randomNum,
-        cellIndex: cellIndex,
         markedBy: game.currentTurn,
         player: currentPlayer,
         automatic: true
