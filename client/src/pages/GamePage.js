@@ -11,6 +11,9 @@ import Timer from '../components/Timer';
 import WinnerModal from '../components/WinnerModal';
 import socket from '../utils/socket';
 
+// Add DEBUG flag at the top to control logging
+const DEBUG = false;
+
 const GamePage = () => {
   const { roomCode } = useParams();
   const navigate = useNavigate();
@@ -168,7 +171,7 @@ const GamePage = () => {
     };
   }, [roomCode, username, navigate]);
   
-  // Updated timer effect
+  // Updated timer effect with reduced logging
   useEffect(() => {
     let isActive = true;
     
@@ -186,11 +189,12 @@ const GamePage = () => {
         
         setTimer((prev) => {
           const newValue = Math.max(0, prev - 1);
-          console.log(`Timer: ${newValue}, Is my turn: ${isMyTurn}`);
+          // Only log when DEBUG is true
+          if (DEBUG) console.log(`Timer: ${newValue}, Is my turn: ${isMyTurn}`);
           
           // Only emit end-turn if it's my turn and timer reaches 0
           if (newValue === 0 && isMyTurn && socket.connected) {
-            console.log('Timer reached zero, ending turn automatically');
+            if (DEBUG) console.log('Timer reached zero, ending turn automatically');
             clearInterval(timerIntervalRef.current);
             timerIntervalRef.current = null;
             socket.emit('end-turn', { roomCode });
@@ -202,7 +206,7 @@ const GamePage = () => {
 
     // Start or restart timer when it's my turn
     if (gameStarted && isMyTurn) {
-      console.log('Starting timer for my turn');
+      if (DEBUG) console.log('Starting timer for my turn');
       startTimer();
     }
     
@@ -323,7 +327,6 @@ const GamePage = () => {
   
   // Event handler functions
   const handleGridAssigned = (newGrid) => {
-    console.log('Grid assigned event received:', JSON.stringify(newGrid));
     if (!newGrid || !Array.isArray(newGrid) || newGrid.length === 0) {
       console.error('Invalid grid received:', newGrid);
       return;
@@ -331,20 +334,21 @@ const GamePage = () => {
     
     // Deep copy the grid to avoid reference issues
     const gridCopy = JSON.parse(JSON.stringify(newGrid));
-    console.log('Setting grid state with valid grid data. Grid size:', 
+    if (DEBUG) {
+      console.log('Grid assigned event received:', JSON.stringify(newGrid));
+      console.log('Setting grid state with valid grid data. Grid size:', 
                 Array.isArray(gridCopy[0]) ? 
                 `${gridCopy.length}x${gridCopy[0].length}` : 
                 `${gridCopy.length} (flat array)`);
-    
-    // Log the previous grid state for debugging
-    console.log('Previous grid state empty:', !grid || grid.length === 0);
+      console.log('Previous grid state empty:', !grid || grid.length === 0);
+    }
     
     // Force immediate state update via callback to ensure it's fully processed
     setGrid(() => gridCopy);
     
     // Explicitly acknowledge grid reception to the server
     if (roomCode && socketConnected) {
-      console.log('Sending grid-ready acknowledgment to server');
+      if (DEBUG) console.log('Sending grid-ready acknowledgment to server');
       setTimeout(() => {
         socket.emit('grid-ready', { roomCode });
       }, 300); // Short delay to ensure state is updated
@@ -353,12 +357,12 @@ const GamePage = () => {
     // Process any pending marked numbers after the grid is set
     setTimeout(() => {
       if (pendingMarkedNumbersRef.current.length > 0) {
-        console.log(`Processing ${pendingMarkedNumbersRef.current.length} queued numbers after grid assignment`);
+        if (DEBUG) console.log(`Processing ${pendingMarkedNumbersRef.current.length} queued numbers after grid assignment`);
         const pendingNumbers = [...pendingMarkedNumbersRef.current];
         pendingMarkedNumbersRef.current = [];
         
         pendingNumbers.forEach(pendingNumber => {
-          console.log('Processing queued number after grid assignment:', pendingNumber);
+          if (DEBUG) console.log('Processing queued number after grid assignment:', pendingNumber);
           handleNumberMarked(pendingNumber);
         });
       }
@@ -576,7 +580,7 @@ const GamePage = () => {
   };
   
   const handleNumberMarked = ({ number, markedBy, player, automatic }) => {
-    console.log('Number marked event received:', { number, markedBy, player, automatic });
+    if (DEBUG) console.log('Number marked event received:', { number, markedBy, player, automatic });
     
     if (!number) {
       console.error('No number provided in number-marked event');
@@ -608,7 +612,7 @@ const GamePage = () => {
       return;
     }
     
-    console.log(`Finding cell index for number ${numberToFind} in grid:`, grid);
+    if (DEBUG) console.log(`Finding cell index for number ${numberToFind} in grid`);
     
     // Create a flat version of the grid for easier lookup
     const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
@@ -625,20 +629,20 @@ const GamePage = () => {
       }
     }
     
-    console.log(`Number ${numberToFind} is at cell index ${cellIndex} in my grid`);
+    if (DEBUG) console.log(`Number ${numberToFind} is at cell index ${cellIndex} in my grid`);
     
     // If the number is found in our grid, mark it
     if (cellIndex !== -1) {
-      console.log(`Marking cell ${cellIndex} for number ${numberToFind}`);
+      if (DEBUG) console.log(`Marking cell ${cellIndex} for number ${numberToFind}`);
       
       // Check if this cell is already marked to avoid duplicates
       if (!markedCells.includes(cellIndex)) {
         setMarkedCells(prevMarkedCells => {
-          console.log(`Adding cell ${cellIndex} to marked cells`, [...prevMarkedCells, cellIndex]);
+          if (DEBUG) console.log(`Adding cell ${cellIndex} to marked cells`);
           return [...prevMarkedCells, cellIndex];
         });
       } else {
-        console.log(`Cell ${cellIndex} already marked`);
+        if (DEBUG) console.log(`Cell ${cellIndex} already marked`);
       }
       
       // Add to history for reference
@@ -657,7 +661,7 @@ const GamePage = () => {
         audioRef.current.play().catch(e => console.log('Audio play error:', e));
       }
     } else {
-      console.warn(`Number ${numberToFind} not found in grid:`, flatGrid);
+      console.warn(`Number ${numberToFind} not found in grid`);
     }
   };
   
@@ -826,12 +830,12 @@ const GamePage = () => {
     </div>
   );
   
-  // Add this new event handler function
+  // Optimize handleSyncMarkedNumbers to reduce logging
   const handleSyncMarkedNumbers = ({ markedNumbers }) => {
-    console.log('Received sync-marked-numbers event with', markedNumbers.length, 'numbers');
+    if (DEBUG) console.log('Received sync-marked-numbers event with', markedNumbers.length, 'numbers');
     
     if (!Array.isArray(markedNumbers) || markedNumbers.length === 0) {
-      console.log('No marked numbers to sync');
+      if (DEBUG) console.log('No marked numbers to sync');
       return;
     }
     
@@ -851,19 +855,19 @@ const GamePage = () => {
       });
       
       // Request grid explicitly
-      console.log('Requesting grid because sync-marked-numbers received before grid was loaded');
+      if (DEBUG) console.log('Requesting grid because sync-marked-numbers received before grid was loaded');
       socket.emit('request-grid', { roomCode });
       
       // Set a retry mechanism for these pending numbers
       const retryInterval = setInterval(() => {
         if (grid && grid.length > 0) {
-          console.log('Grid now available, retrying processing of high priority queued numbers');
+          if (DEBUG) console.log('Grid now available, retrying processing of high priority queued numbers');
           
           // Find high priority numbers
           const highPriorityNumbers = pendingMarkedNumbersRef.current.filter(item => item.highPriority);
           
           if (highPriorityNumbers.length > 0) {
-            console.log(`Processing ${highPriorityNumbers.length} high priority numbers`);
+            if (DEBUG) console.log(`Processing ${highPriorityNumbers.length} high priority numbers`);
             
             // Remove these from the pending queue
             pendingMarkedNumbersRef.current = pendingMarkedNumbersRef.current.filter(item => !item.highPriority);
@@ -884,7 +888,7 @@ const GamePage = () => {
       return;
     }
     
-    console.log('Processing', markedNumbers.length, 'marked numbers from sync event');
+    if (DEBUG) console.log('Processing', markedNumbers.length, 'marked numbers from sync event');
     
     // Process each marked number
     const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
@@ -908,7 +912,7 @@ const GamePage = () => {
       
       // If found and not already marked, add to marked cells
       if (cellIndex !== -1 && !newMarkedCells.includes(cellIndex)) {
-        console.log(`Marking cell ${cellIndex} for synced number ${numberInt}`);
+        if (DEBUG) console.log(`Marking cell ${cellIndex} for synced number ${numberInt}`);
         newMarkedCells.push(cellIndex);
         changed = true;
       }
@@ -916,7 +920,7 @@ const GamePage = () => {
     
     // Only update state if we actually added new cells
     if (changed) {
-      console.log('Updating marked cells from sync event', newMarkedCells);
+      if (DEBUG) console.log('Updating marked cells from sync event');
       setMarkedCells(newMarkedCells);
     }
   };

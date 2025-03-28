@@ -1,38 +1,33 @@
-import io from 'socket.io-client';
+import { io } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
 
-// Remove any trailing slashes from the URL
-const baseUrl = (process.env.REACT_APP_SERVER_URL || 'https://bingo-buzz.up.railway.app').replace(/\/$/, '');
-const SOCKET_URL = baseUrl;
+// Add DEBUG flag to control logging
+const DEBUG = false;
 
-let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
+// Get server URL from environment or use default
+const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'https://bingo-buzz-server.vercel.app';
 
-const socket = io(SOCKET_URL, {
-  transports: ['websocket', 'polling'], // Add polling as fallback
-  autoConnect: true,
-  reconnection: true,
-  reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
+// Configure socket with optimized settings
+const socket = io(SERVER_URL, {
+  reconnectionAttempts: 5,
   reconnectionDelay: 1000,
-  reconnectionDelayMax: 5000,
-  timeout: 20000,
-  pingTimeout: 30000,
-  pingInterval: 10000,
-  forceNew: true,
-  auth: {
-    timestamp: Date.now()
-  }
+  timeout: 10000,
+  autoConnect: true,
+  transports: ['websocket', 'polling']
 });
 
-// Connection event handlers
+// Add optimized event listeners with reduced logging
 socket.on('connect', () => {
-  console.log('Socket connected with ID:', socket.id);
-  reconnectAttempts = 0;
+  if (DEBUG) console.log('Socket connected, ID:', socket.id);
   toast.success('Connected to game server');
 });
 
+socket.on('connect_error', (error) => {
+  console.error('Socket connection error:', error.message);
+});
+
 socket.on('disconnect', (reason) => {
-  console.log('Socket disconnected:', reason, 'Socket ID:', socket.id);
+  if (DEBUG) console.log('Socket disconnected:', reason);
   
   // Handle different disconnect reasons
   if (reason === 'io server disconnect') {
@@ -47,13 +42,11 @@ socket.on('disconnect', (reason) => {
 
 socket.on('reconnect', (attemptNumber) => {
   console.log('Socket reconnected after', attemptNumber, 'attempts. New Socket ID:', socket.id);
-  reconnectAttempts = 0;
   toast.success('Reconnected to game server');
 });
 
 socket.on('reconnect_attempt', (attemptNumber) => {
-  console.log('Attempting to reconnect:', attemptNumber, 'of', MAX_RECONNECT_ATTEMPTS);
-  reconnectAttempts = attemptNumber;
+  console.log('Attempting to reconnect:', attemptNumber, 'of', 5);
   
   // Update auth data on reconnect attempt
   socket.auth = {
@@ -63,15 +56,11 @@ socket.on('reconnect_attempt', (attemptNumber) => {
 
 socket.on('reconnect_error', (error) => {
   console.error('Reconnection error:', error);
-  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    toast.error('Unable to reconnect. Please refresh the page.');
-  } else {
-    toast.error(`Reconnection failed (Attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-  }
+  toast.error('Unable to reconnect. Please refresh the page.');
 });
 
 socket.on('reconnect_failed', () => {
-  console.error('Failed to reconnect after', MAX_RECONNECT_ATTEMPTS, 'attempts');
+  console.error('Failed to reconnect after 5 attempts');
   toast.error('Connection failed. Please refresh the page.');
 });
 
@@ -84,7 +73,7 @@ socket.on('error', (error) => {
 const healthCheck = setInterval(() => {
   if (socket.connected) {
     socket.emit('ping');
-  } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+  } else {
     clearInterval(healthCheck);
     toast.error('Connection lost. Please refresh the page.');
   }

@@ -161,6 +161,16 @@ connectToMongoDB();
 // In-memory store for games
 const games = {};
 
+// Add DEBUG flag to control logging
+const DEBUG = false;
+
+// Split logs by importance level - keep critical logs, wrap frequent ones in DEBUG flag
+const LOG_LEVELS = {
+  ERROR: true,    // Always show errors
+  INFO: true,     // Show informational logs
+  DEBUG: DEBUG    // Only show debug logs when DEBUG is true
+};
+
 // API Routes
 app.post('/api/games', (req, res) => {
   try {
@@ -628,7 +638,7 @@ io.on('connection', (socket) => {
   
   // Handle marking a number
   socket.on('mark-number', ({ roomCode, number }) => {
-    console.log(`mark-number event received from player ${socket.id}, number: ${number}, room: ${roomCode}`);
+    if (LOG_LEVELS.DEBUG) console.log(`mark-number event received from player ${socket.id}, number: ${number}, room: ${roomCode}`);
     
     const game = games[roomCode];
     if (!game) {
@@ -693,7 +703,7 @@ io.on('connection', (socket) => {
     }
     
     try {
-      console.log(`Player ${socket.id} (${player.username}) marking number ${number} in room ${roomCode}`);
+      if (LOG_LEVELS.DEBUG) console.log(`Player ${socket.id} (${player.username}) marking number ${number} in room ${roomCode}`);
       
       // Mark the number in the global set
       game.markedNumbers.add(number);
@@ -701,7 +711,7 @@ io.on('connection', (socket) => {
       game.lastMarkedTurn = game.turnIndex;
       
       // Debug: Print current state of marked numbers
-      console.log(`Current marked numbers in room ${roomCode}:`, Array.from(game.markedNumbers));
+      if (LOG_LEVELS.DEBUG) console.log(`Current marked numbers in room ${roomCode}:`, Array.from(game.markedNumbers));
       
       // Clear any active turn timer
       if (game.timer) {
@@ -711,7 +721,7 @@ io.on('connection', (socket) => {
       
       // Notify all players with the NUMBER, not just the cellIndex
       // Use a separate broadcast to ensure all clients receive it
-      console.log(`Broadcasting number-marked event to all players in room ${roomCode}`);
+      if (LOG_LEVELS.DEBUG) console.log(`Broadcasting number-marked event to all players in room ${roomCode}`);
       io.to(roomCode).emit('number-marked', {
         number: number,
         markedBy: socket.id,
@@ -719,15 +729,17 @@ io.on('connection', (socket) => {
         automatic: false
       });
       
-      // For debugging, log all players in the room
-      io.in(roomCode).fetchSockets().then(sockets => {
-        console.log(`Room ${roomCode} has ${sockets.length} connected players`);
-        sockets.forEach(s => {
-          console.log(`- Socket ${s.id} in room ${roomCode}`);
+      // For debugging, log all players in the room only when DEBUG is true
+      if (LOG_LEVELS.DEBUG) {
+        io.in(roomCode).fetchSockets().then(sockets => {
+          console.log(`Room ${roomCode} has ${sockets.length} connected players`);
+          sockets.forEach(s => {
+            console.log(`- Socket ${s.id} in room ${roomCode}`);
+          });
+        }).catch(err => {
+          console.error(`Error fetching sockets for room ${roomCode}:`, err);
         });
-      }).catch(err => {
-        console.error(`Error fetching sockets for room ${roomCode}:`, err);
-      });
+      }
       
       // Check for a winner
       const winner = checkWin(game);
@@ -1036,56 +1048,64 @@ io.on('connection', (socket) => {
 
   // Handle grid-ready acknowledgment from client
   socket.on('grid-ready', ({ roomCode }) => {
-    console.log(`Player ${socket.id} acknowledged grid reception for room ${roomCode}`);
+    if (LOG_LEVELS.DEBUG) console.log(`Player ${socket.id} acknowledged grid reception for room ${roomCode}`);
+    
     const game = games[roomCode];
+    if (!game) return;
     
-    if (!game) {
-      return;
-    }
-    
-    // Find the player
     const player = game.players.find(p => p.id === socket.id);
-    if (!player) {
-      console.warn(`Player ${socket.id} not found in game ${roomCode}`);
-      return;
-    }
+    if (!player) return;
     
-    // Send marked numbers immediately now that grid is ready
-    if (game.markedNumbers && game.markedNumbers.size > 0) {
-      console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id} immediately after grid-ready acknowledgment`);
+    // Mark that this player's grid is ready
+    player.gridReady = true;
+    
+    // Send marked numbers if there are any
+    if (game.markedNumbers.size > 0) {
+      if (LOG_LEVELS.DEBUG) console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id} immediately after grid-ready acknowledgment`);
       
-      // Convert Set to Array for sending
       const markedNumbersArray = Array.from(game.markedNumbers);
-      socket.emit('sync-marked-numbers', {
-        markedNumbers: markedNumbersArray
+      socket.emit('sync-marked-numbers', { 
+        numbers: markedNumbersArray,
+        source: 'grid-ready-event'
       });
     }
+  });
+
+  // Handle sync-marked-numbers request from client
+  socket.on('sync-marked-numbers-request', ({ roomCode }) => {
+    if (LOG_LEVELS.DEBUG) console.log(`Player ${socket.id} requesting marked numbers for room ${roomCode}`);
     
-    // Send current turn information if game has started
-    if (game.started) {
-      const currentTurnPlayer = game.players.find(p => p.id === game.currentTurn);
-      if (currentTurnPlayer) {
-        socket.emit('turn-changed', {
-          currentTurn: game.currentTurn,
-          player: currentTurnPlayer
-        });
-      }
+    const game = games[roomCode];
+    if (!game) {
+      return socket.emit('error', 'Room not found');
     }
+    
+    const player = game.players.find(p => p.id === socket.id);
+    if (!player) {
+      return socket.emit('error', 'Player not found in room');
+    }
+    
+    if (!game.markedNumbers || game.markedNumbers.size === 0) {
+      if (LOG_LEVELS.DEBUG) console.log(`No marked numbers to send for room ${roomCode}`);
+      return socket.emit('sync-marked-numbers', { markedNumbers: [] });
+    }
+    
+    const markedNumbersArray = Array.from(game.markedNumbers);
+    if (LOG_LEVELS.DEBUG) console.log(`Sending ${markedNumbersArray.length} marked numbers to player ${socket.id} in room ${roomCode}`);
+    
+    socket.emit('sync-marked-numbers', { markedNumbers: markedNumbersArray });
   });
 });
 
 // Helper function to start a turn
 function startTurn(roomCode) {
   const game = games[roomCode];
-  if (!game) {
-    console.error(`Cannot start turn: Game not found for room ${roomCode}`);
-    return;
-  }
-  
-  if (!game.players || game.players.length === 0) {
-    console.error(`Cannot start turn: No players in room ${roomCode}`);
-    return;
-  }
+  if (!game || !game.started) return;
+
+  const currentPlayer = game.players.find(p => p.id === game.currentTurn);
+  if (!currentPlayer) return;
+
+  if (LOG_LEVELS.DEBUG) console.log(`Starting turn for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}, turn index: ${game.turnIndex}`);
   
   // Ensure turnIndex is within bounds
   game.turnIndex = game.turnIndex % game.players.length;
@@ -1099,8 +1119,6 @@ function startTurn(roomCode) {
   
   // Set current turn
   game.currentTurn = currentPlayer.id;
-  
-  console.log(`Starting turn for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}, turn index: ${game.turnIndex}`);
   
   // Notify all players about whose turn it is
   io.to(roomCode).emit('turn-started', {
@@ -1123,13 +1141,17 @@ function startTurn(roomCode) {
   
   // Set a timer for this turn (15 seconds)
   game.timer = setTimeout(() => {
-    // Only proceed if it's still this player's turn
-    if (game.currentTurn !== currentPlayer.id) {
-      console.log(`Timer expired but turn already changed for ${currentPlayer.username} in room ${roomCode}`);
+    // Get the updated game state to check if turn has changed
+    const updatedGame = games[roomCode];
+    if (!updatedGame || !updatedGame.started) return;
+    
+    // Check if the turn has already been changed
+    if (updatedGame.currentTurn !== game.currentTurn) {
+      if (LOG_LEVELS.DEBUG) console.log(`Timer expired but turn already changed for ${currentPlayer.username} in room ${roomCode}`);
       return;
     }
     
-    console.log(`Timer expired for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}`);
+    if (LOG_LEVELS.DEBUG) console.log(`Timer expired for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}`);
     
     // Get unmarked numbers from the current player's grid only
     const playerGrid = game.grids[currentPlayer.id];
@@ -1189,7 +1211,6 @@ function startTurn(roomCode) {
         
         // End the game
         game.started = false;
-        return;
       }
     } else {
       console.log(`No unmarked numbers left for player ${currentPlayer.username}`);
@@ -1201,7 +1222,7 @@ function startTurn(roomCode) {
       game.currentTurn = game.players[game.turnIndex].id;
       startTurn(roomCode);
     }
-  }, 15000);
+  }, game.turnDuration);
 }
 
 // Helper function to move to the next turn
@@ -1281,6 +1302,67 @@ async function updateLeaderboard(player, score) {
     console.error('Error updating leaderboard:', error);
   }
 }
+
+// Optimize automatic marking in startTurn function
+const getRandomUnmarkedNumber = (grid, markedNumbers) => {
+  if (!grid) return null;
+  
+  // Flatten the grid and filter out already marked numbers
+  const flatGrid = grid.flat();
+  const unmarkedNumbers = flatGrid.filter(num => !markedNumbers.has(num));
+  
+  if (unmarkedNumbers.length === 0) {
+    return null;
+  }
+  
+  // Pick a random number from unmarked numbers
+  const randomIndex = Math.floor(Math.random() * unmarkedNumbers.length);
+  return unmarkedNumbers[randomIndex];
+};
+
+// Optimize logs in checkWin function
+const checkWin = (game) => {
+  // Only proceed if the game is active and has marked numbers
+  if (!game || !game.started || !game.markedNumbers || game.markedNumbers.size < 5) {
+    return null;
+  }
+  
+  // Convert to array for easier checking
+  const markedNumbersSet = game.markedNumbers;
+  
+  // Check each player's grid for winning patterns
+  for (const playerId in game.grids) {
+    const grid = game.grids[playerId];
+    if (!grid) continue;
+    
+    const gridSize = grid.length;
+    const winningPatterns = getWinningPatterns(gridSize);
+    
+    for (const pattern of winningPatterns) {
+      let isWinningPattern = true;
+      const winningCells = [];
+      
+      for (const [row, col] of pattern) {
+        const cellValue = grid[row][col];
+        if (!markedNumbersSet.has(cellValue)) {
+          isWinningPattern = false;
+          break;
+        }
+        winningCells.push({ row, col, value: cellValue });
+      }
+      
+      if (isWinningPattern) {
+        if (LOG_LEVELS.DEBUG) console.log(`Player ${playerId} won with pattern: ${JSON.stringify(pattern)}`);
+        return {
+          playerId,
+          lines: [winningCells]
+        };
+      }
+    }
+  }
+  
+  return null;
+};
 
 // Start the server
 const PORT = 5000; // Server should run on port 5000 according to project specifications

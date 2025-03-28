@@ -79,11 +79,6 @@ const BingoGrid = ({
     // Check if this cell is part of a winning line
     const isWinningCell = Array.isArray(winningLines) && winningLines.includes(index);
     
-    // Log the state for debugging
-    if (isMarked || isWinningCell) {
-      console.log(`Cell ${index} - marked: ${isMarked}, winning: ${isWinningCell}`);
-    }
-
     if (isMarked) {
       return {
         ...baseStyle,
@@ -133,8 +128,8 @@ const BingoGrid = ({
     transition: { duration: 0.2 }
   };
 
+  // Cell click handler
   const handleCellClick = (number, index) => {
-    console.log(`Cell clicked: number ${number}, index ${index}`);
     if (typeof onCellClick === 'function') {
       // Pass the cell index first, then the number to the parent component
       onCellClick(index, number);
