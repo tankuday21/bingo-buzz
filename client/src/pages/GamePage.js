@@ -86,7 +86,6 @@ const GamePage = () => {
     socket.on('player-joined', handlePlayerJoined);
     socket.on('player-left', handlePlayerLeft);
     socket.on('game-started', handleGameStarted);
-    socket.on('turn-started', handleTurnStarted);
     socket.on('number-marked', handleNumberMarked);
     socket.on('game-won', handleGameWon);
     socket.on('error', handleError);
@@ -98,7 +97,6 @@ const GamePage = () => {
       socket.off('player-joined', handlePlayerJoined);
       socket.off('player-left', handlePlayerLeft);
       socket.off('game-started', handleGameStarted);
-      socket.off('turn-started', handleTurnStarted);
       socket.off('number-marked', handleNumberMarked);
       socket.off('game-won', handleGameWon);
       socket.off('error', handleError);
@@ -388,13 +386,17 @@ const GamePage = () => {
       
       // Update whose turn it is
       setCurrentTurn(data.playerId);
+      setIsMyTurn(data.playerId === socket.id);
       
-      // Start timer if it's my turn
+      // Show toast notification
       if (data.playerId === socket.id) {
         console.log('Starting timer for my turn');
         startTimer();
+        toast.success("It's your turn!");
       } else {
         console.log('Not my turn, clearing timer');
+        const playerName = players.find(p => p.id === data.playerId)?.username || 'Unknown';
+        toast(`It's ${playerName}'s turn`);
       }
     };
 
@@ -408,7 +410,7 @@ const GamePage = () => {
         timerRef.current = null;
       }
     };
-  }, [socket]);
+  }, [socket, players]);
   
   const handleNumberMarked = ({ number, markedBy, player, automatic }) => {
     console.log('Number marked:', number, 'by player:', player?.username || markedBy);
