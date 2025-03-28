@@ -498,18 +498,32 @@ const GamePage = () => {
   };
   
   // Handle player ready state changes
-  const handlePlayerReady = ({ username, readyPlayers }) => {
-    setReadyPlayers(readyPlayers);
-    if (username === username) {
-      setIsReady(readyPlayers.includes(username));
+  const handlePlayerReady = ({ username: readyUsername, readyPlayers }) => {
+    console.log(`Player ready update received: ${readyUsername}, Ready players:`, readyPlayers);
+    
+    if (Array.isArray(readyPlayers)) {
+      setReadyPlayers(readyPlayers);
+      
+      // Check if I'm the player who toggled ready status
+      if (readyUsername === username) {
+        const amIReady = readyPlayers.includes(username);
+        console.log(`Updating my ready status to ${amIReady}`);
+        setIsReady(amIReady);
+      }
+      
+      // Show a notification
+      const isPlayerReady = readyPlayers.includes(readyUsername);
+      toast.success(`${readyUsername} is ${isPlayerReady ? 'ready' : 'not ready'}`);
+    } else {
+      console.error('Invalid readyPlayers data received:', readyPlayers);
     }
-    toast.success(`${username} is ${readyPlayers.includes(username) ? 'ready' : 'not ready'}`);
   };
   
   // Toggle ready status
   const handleToggleReady = () => {
     const newReadyStatus = !isReady;
     setIsReady(newReadyStatus);
+    console.log(`Setting ready status to ${newReadyStatus} for ${username} in room ${roomCode}`);
     socket.emit('toggle-ready', { roomCode, username, isReady: newReadyStatus });
   };
   
