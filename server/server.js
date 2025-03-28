@@ -638,7 +638,7 @@ io.on('connection', (socket) => {
       const score = Math.max(100 - Math.floor(gameTime / 10), 10);
       
       // Update winning player's score
-      winningPlayer.score += score;
+      winningPlayer.score = (winningPlayer.score || 0) + score;
       
       // Save to leaderboard
       updateLeaderboard(winningPlayer, score);
@@ -652,11 +652,11 @@ io.on('connection', (socket) => {
       
       // End the game
       game.started = false;
-      return;
+    } else {
+      // Move to next turn
+      game.turnIndex = (game.turnIndex + 1) % game.players.length;
+      nextTurn(roomCode);
     }
-    
-    // Move to next turn
-    moveToNextTurn(roomCode);
   });
   
   // Handle end-turn (when timer expires or player manually ends their turn)
@@ -826,21 +826,16 @@ function startTurn(roomCode) {
     return;
   }
   
-  if (!game.currentTurn) {
-    console.error(`No current turn set for room ${roomCode}, setting to first player`);
-    game.currentTurn = game.players[0].id;
-  }
-  
-  // Find the current player
-  let currentPlayer = game.players.find(p => p.id === game.currentTurn);
+  // Find the current player based on turnIndex
+  const currentPlayer = game.players[game.turnIndex % game.players.length];
   if (!currentPlayer) {
-    console.error(`Current player ${game.currentTurn} not found in room ${roomCode}`);
-    // Failsafe: set to first player
-    game.currentTurn = game.players[0].id;
-    currentPlayer = game.players[0];
+    console.error(`Current player not found for turn index ${game.turnIndex} in room ${roomCode}`);
+    return;
   }
   
-  console.log(`Starting turn for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}`);
+  game.currentTurn = currentPlayer.id;
+  
+  console.log(`Starting turn for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}, turn index: ${game.turnIndex}`);
   
   // Notify all players about whose turn it is
   io.to(roomCode).emit('turn-started', {
@@ -853,18 +848,18 @@ function startTurn(roomCode) {
   game.timer = setTimeout(() => {
     console.log(`Timer expired for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}`);
     
-    // Get unmarked numbers
-    const unmarked = getUnmarkedNumbers(game);
+    // Get unmarked numbers from the current player's grid only
+    const playerGrid = game.grids[currentPlayer.id];
+    const unmarked = playerGrid ? playerGrid.flat().filter(num => !game.markedNumbers.has(num)) : [];
     
     if (unmarked.length > 0) {
-      // Select a random unmarked number
+      // Select a random unmarked number from player's grid
       const randomNum = unmarked[Math.floor(Math.random() * unmarked.length)];
-      
-      // Find the current player
-      const currentPlayer = game.players.find(p => p.id === game.currentTurn);
       
       // Mark the number
       game.markedNumbers.add(randomNum);
+      game.lastMarkedNumber = randomNum;
+      game.lastMarkedTurn = game.turnIndex;
       
       console.log(`Automatically marking number ${randomNum} for ${currentPlayer.username} in room ${roomCode}`);
       
@@ -886,9 +881,7 @@ function startTurn(roomCode) {
         const score = Math.max(100 - Math.floor(gameTime / 10), 10);
         
         // Update winning player's score
-        winningPlayer.score += score;
-        
-        console.log(`Player ${winningPlayer.username} won in room ${roomCode}`);
+        winningPlayer.score = (winningPlayer.score || 0) + score;
         
         // Save to leaderboard
         updateLeaderboard(winningPlayer, score);
@@ -899,17 +892,15 @@ function startTurn(roomCode) {
           lines: winner.lines,
           score
         });
-        
-        // Clean up game resources
-        setTimeout(() => {
-          delete games[roomCode];
-        }, 1000 * 60 * 10); // Keep game data for 10 minutes
       } else {
-        // Continue to next turn
+        // Move to next turn
+        game.turnIndex = (game.turnIndex + 1) % game.players.length;
         nextTurn(roomCode);
       }
     } else {
-      console.log(`No unmarked numbers left in room ${roomCode}`);
+      // Move to next turn even if no numbers to mark
+      game.turnIndex = (game.turnIndex + 1) % game.players.length;
+      nextTurn(roomCode);
     }
   }, 15000);
 }
@@ -917,27 +908,12 @@ function startTurn(roomCode) {
 // Helper function to move to the next turn
 function nextTurn(roomCode) {
   const game = games[roomCode];
-  if (!game || !game.players || game.players.length === 0) return;
-  
-  // Find the current player's index
-  const currentIndex = game.players.findIndex(p => p.id === game.currentTurn);
-  
-  // If invalid current index, start with the first player
-  if (currentIndex === -1) {
-    game.currentTurn = game.players[0].id;
-  } else {
-    // Move to the next player (cyclic)
-    const nextIndex = (currentIndex + 1) % game.players.length;
-    game.currentTurn = game.players[nextIndex].id;
+  if (!game || !game.players || game.players.length === 0) {
+    console.error(`Cannot move to next turn: Invalid game state for room ${roomCode}`);
+    return;
   }
   
-  // Reset the lastMarkedNumber for the new turn
-  game.lastMarkedNumber = undefined;
-  game.lastMarkedTurn = game.turnIndex;
-  
-  console.log(`Next turn: ${game.currentTurn} in room ${roomCode}`);
-  
-  // Start the new turn
+  // Start the new turn immediately
   startTurn(roomCode);
 }
 
