@@ -207,7 +207,7 @@ app.post('/api/games', (req, res) => {
       lastMarkedNumber: undefined,
       lastMarkedTurn: -1, // Initialize to -1 to ensure it doesn't match the first turn (0)
       createdAt: Date.now(),
-      host: username,
+      hostUsername: username, // Store the host username instead of socket ID
       usedGrids: new Set(), // Add tracking for used grids
       readyPlayers: [] // Add readyPlayers array to track who's ready
     };
@@ -459,6 +459,10 @@ io.on('connection', (socket) => {
         typeof player === 'string' ? player : player.username
       );
       
+      // Determine if this player is the host (by username, not socket ID)
+      const isHost = username === game.hostUsername;
+      console.log(`Checking if ${username} is host. Game host username: ${game.hostUsername}, Result: ${isHost}`);
+      
       // Emit success event with game state
       socket.emit('joined-room', {
         grid: playerGrid,
@@ -466,7 +470,7 @@ io.on('connection', (socket) => {
           id: player.id, 
           username: player.username
         })),
-        isHost: game.players[0].id === socket.id,
+        isHost: isHost,
         gameStarted: game.started,
         readyPlayers: readyPlayerUsernames
       });
@@ -496,8 +500,17 @@ io.on('connection', (socket) => {
       return socket.emit('error', 'Room not found');
     }
     
+    // Find the player
+    const player = game.players.find(p => p.id === socket.id);
+    if (!player) {
+      return socket.emit('error', 'Player not found');
+    }
+    
+    console.log(`Attempting to start game. Host username: ${game.hostUsername}, Current player: ${player.username}, Is host: ${player.username === game.hostUsername}`);
+    
     // Only host can start the game
-    if (socket.id !== game.host) {
+    if (player.username !== game.hostUsername) {
+      console.log(`Player ${player.username} attempted to start game but is not host (${game.hostUsername})`);
       return socket.emit('error', 'Only the host can start the game');
     }
     
@@ -507,8 +520,7 @@ io.on('connection', (socket) => {
     }
     
     // Get host username
-    const hostPlayer = game.players.find(p => p.id === game.host);
-    const hostUsername = hostPlayer ? hostPlayer.username : null;
+    const hostUsername = game.hostUsername;
     
     // Check if there are at least 2 players and someone other than the host is ready
     // Or if single player mode is supported, just check if the host is ready
@@ -516,7 +528,7 @@ io.on('connection', (socket) => {
     
     // Check if host is ready (unless the game only has one player)
     const isHostReady = (game.players.length === 1) || 
-                        (hostUsername && game.readyPlayers.includes(hostUsername));
+                        (game.readyPlayers.includes(hostUsername));
                         
     if (!hasEnoughReadyPlayers) {
       return socket.emit('error', 'Not enough players are ready to start the game');
@@ -526,6 +538,8 @@ io.on('connection', (socket) => {
     if (!isHostReady && game.players.length > 1) {
       return socket.emit('error', 'Host must be ready to start the game');
     }
+    
+    console.log(`Starting game in room ${roomCode} with ${game.players.length} players`);
     
     // Start the game
     game.started = true;
