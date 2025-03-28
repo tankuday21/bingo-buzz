@@ -121,6 +121,7 @@ const GamePage = () => {
           const newValue = Math.max(0, prev - 1);
           console.log(`Timer: ${newValue}, Is my turn: ${isMyTurn}`);
           
+          // Only emit end-turn if it's my turn and timer reaches 0
           if (newValue === 0 && isMyTurn && socket.connected) {
             console.log('Timer reached zero, ending turn automatically');
             clearInterval(timerIntervalRef.current);
@@ -131,15 +132,10 @@ const GamePage = () => {
       }, 1000);
     };
 
-    if (gameStarted && isMyTurn) {
-      console.log('Starting timer for my turn');
+    // Start timer when game is started, regardless of whose turn it is
+    if (gameStarted) {
+      console.log('Starting timer for turn');
       startTimer();
-    } else if (!isMyTurn) {
-      console.log('Not my turn, clearing timer');
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-      }
     }
     
     return () => {
@@ -374,7 +370,7 @@ const GamePage = () => {
         timerRef.current = null;
       }
       
-      // Reset timer state
+      // Reset timer state for all players
       setTimer(15);
       
       // Update whose turn it is
@@ -383,11 +379,8 @@ const GamePage = () => {
       
       // Show toast notification
       if (data.playerId === socket.id) {
-        console.log('Starting timer for my turn');
-        startTimer();
         toast.success("It's your turn!");
       } else {
-        console.log('Not my turn, clearing timer');
         const playerName = players.find(p => p.id === data.playerId)?.username || 'Unknown';
         toast(`It's ${playerName}'s turn`);
       }
