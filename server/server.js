@@ -627,21 +627,26 @@ io.on('connection', (socket) => {
   });
   
   // Handle marking a number
-  socket.on('mark-number', ({ roomCode, number, cellIndex }) => {
-    console.log(`Player ${socket.id} attempting to mark number ${number} (cellIndex: ${cellIndex}) in room ${roomCode}`);
-    const game = games[roomCode];
+  socket.on('mark-number', ({ roomCode, number }) => {
+    console.log(`mark-number event received from player ${socket.id}, number: ${number}, room: ${roomCode}`);
     
+    const game = games[roomCode];
     if (!game) {
+      console.log(`Room ${roomCode} not found for mark-number event`);
       return socket.emit('error', 'Room not found');
     }
     
+    // Update game activity
+    updateGameActivity(roomCode);
+    
     if (!game.started) {
+      console.log(`Game in room ${roomCode} has not started yet`);
       return socket.emit('error', 'Game has not started yet');
     }
     
-    // Enforce turn order
-    if (socket.id !== game.currentTurn) {
-      console.log(`Not ${socket.id}'s turn to mark. Current turn is ${game.currentTurn}`);
+    // Only the current player can mark a number
+    if (game.currentTurn !== socket.id) {
+      console.log(`Not player ${socket.id}'s turn to mark! Current turn: ${game.currentTurn}`);
       return socket.emit('error', 'Not your turn');
     }
     
@@ -694,6 +699,9 @@ io.on('connection', (socket) => {
       game.markedNumbers.add(number);
       game.lastMarkedNumber = number;
       game.lastMarkedTurn = game.turnIndex;
+      
+      // Debug: Print current state of marked numbers
+      console.log(`Current marked numbers in room ${roomCode}:`, Array.from(game.markedNumbers));
       
       // Clear any active turn timer
       if (game.timer) {
