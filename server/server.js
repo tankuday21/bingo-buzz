@@ -639,6 +639,7 @@ io.on('connection', (socket) => {
       return socket.emit('error', 'Game has not started yet');
     }
     
+    // Enforce turn order
     if (socket.id !== game.currentTurn) {
       console.log(`Not ${socket.id}'s turn to mark. Current turn is ${game.currentTurn}`);
       return socket.emit('error', 'Not your turn');
@@ -656,39 +657,15 @@ io.on('connection', (socket) => {
       number = parseInt(number, 10);
     }
     
-    // Get player's grid
-    const playerGrid = game.grids[socket.id];
-    const flatGrid = playerGrid ? playerGrid.flat() : [];
-    
     // Validate that number is a valid integer
     if (typeof number !== 'number' || isNaN(number)) {
       console.log(`Invalid number value: ${number}, type: ${typeof number}`);
-      
-      // If we have a cellIndex, try to get the number from the grid
-      if (cellIndex !== undefined && flatGrid.length > 0) {
-        if (cellIndex >= 0 && cellIndex < flatGrid.length) {
-          number = flatGrid[cellIndex];
-          console.log(`Recovered number ${number} from cellIndex ${cellIndex}`);
-        } else {
-          return socket.emit('error', 'Invalid cell index');
-        }
-      } else {
-        return socket.emit('error', 'Invalid number format');
-      }
-    }
-    
-    // If we have a number but no cellIndex, find it in the grid
-    if (cellIndex === undefined && flatGrid.length > 0) {
-      cellIndex = flatGrid.indexOf(number);
-      console.log(`Found cellIndex ${cellIndex} for number ${number} in player's grid`);
-      
-      if (cellIndex === -1) {
-        console.log(`Number ${number} not found in player's grid:`, flatGrid);
-      }
+      return socket.emit('error', 'Invalid number format');
     }
     
     // Check if the number is already marked
     if (game.markedNumbers.has(number)) {
+      console.log(`Number ${number} is already marked`);
       return socket.emit('error', 'This number is already marked');
     }
     
@@ -710,59 +687,69 @@ io.on('connection', (socket) => {
       return socket.emit('error', 'Invalid number');
     }
     
-    // Clear the turn timer
-    if (game.timer) {
-      clearTimeout(game.timer);
-      game.timer = null;
-    }
-    
-    console.log(`Player ${socket.id} (${player.username}) marked number ${number} at cellIndex ${cellIndex} in room ${roomCode}`);
-    
     // Mark the number
-    game.markedNumbers.add(number);
-    game.lastMarkedNumber = number;
-    game.lastMarkedTurn = game.turnIndex;
-    
-    // Notify all players
-    io.to(roomCode).emit('number-marked', {
-      number,
-      cellIndex,
-      markedBy: socket.id,
-      player: player,
-      automatic: false
-    });
-    
-    // Check for a winner
-    const winner = checkWin(game);
-    if (winner) {
-      const winningPlayer = game.players.find(p => p.id === winner.playerId);
+    try {
+      console.log(`Player ${socket.id} (${player.username}) marking number ${number} in room ${roomCode}`);
       
-      // Calculate score based on time and turns
-      const gameTime = (Date.now() - game.startTime) / 1000;
-      const score = Math.max(100 - Math.floor(gameTime / 10), 10);
+      // Add to marked numbers set
+      game.markedNumbers.add(number);
+      game.lastMarkedNumber = number;
+      game.lastMarkedTurn = game.turnIndex;
       
-      // Update winning player's score
-      winningPlayer.score = (winningPlayer.score || 0) + score;
+      // Clear any active turn timer
+      if (game.timer) {
+        clearTimeout(game.timer);
+        game.timer = null;
+      }
       
-      // Save to leaderboard
-      updateLeaderboard(winningPlayer, score);
-      
-      // Notify all players of the winner
-      io.to(roomCode).emit('game-won', {
-        player: winningPlayer,
-        lines: winner.lines,
-        score
+      // Notify all players immediately
+      io.to(roomCode).emit('number-marked', {
+        number,
+        cellIndex,
+        markedBy: socket.id,
+        player: player,
+        automatic: false
       });
       
-      // End the game
-      game.started = false;
-    } else {
-      // Move to next turn
-      game.turnIndex = (game.turnIndex + 1) % game.players.length;
-      game.currentTurn = game.players[game.turnIndex].id;
-      
-      // Start the next turn
-      startTurn(roomCode);
+      // Check for a winner
+      const winner = checkWin(game);
+      if (winner) {
+        const winningPlayer = game.players.find(p => p.id === winner.playerId);
+        
+        // Calculate score based on time and turns
+        const gameTime = (Date.now() - game.startTime) / 1000;
+        const score = Math.max(100 - Math.floor(gameTime / 10), 10);
+        
+        // Update winning player's score
+        winningPlayer.score = (winningPlayer.score || 0) + score;
+        
+        // Notify all players
+        io.to(roomCode).emit('game-won', {
+          player: winningPlayer,
+          lines: winner.lines,
+          score
+        });
+        
+        // End the game
+        game.started = false;
+      } else {
+        // Move to next turn
+        game.turnIndex = (game.turnIndex + 1) % game.players.length;
+        game.currentTurn = game.players[game.turnIndex].id;
+        
+        // Emit turn changed immediately to all players
+        const nextPlayer = game.players[game.turnIndex];
+        io.to(roomCode).emit('turn-changed', {
+          currentTurn: game.currentTurn,
+          player: nextPlayer
+        });
+        
+        // Start the new turn
+        startTurn(roomCode);
+      }
+    } catch (error) {
+      console.error('Error handling mark-number:', error);
+      socket.emit('error', 'Server error processing your move');
     }
   });
   

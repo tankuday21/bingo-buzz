@@ -91,8 +91,11 @@ const BingoGrid = ({
         color: '#FFFFFF',
         fontWeight: '800',
         transform: 'scale(1.05)',
-        boxShadow: `0 0 0 2px ${theme.colors.primary}, 0 0 10px rgba(0,0,0,0.2)`,
-        textShadow: '0px 1px 2px rgba(0,0,0,0.3)'
+        boxShadow: `0 0 0 2px ${theme.colors.primary}, 0 0 10px rgba(0,0,0,0.5)`,
+        textShadow: '0px 1px 2px rgba(0,0,0,0.5)',
+        // Add a subtle inner glow effect
+        border: 'none',
+        outline: `3px solid ${theme.colors.primary}`
       };
     }
 
@@ -103,12 +106,31 @@ const BingoGrid = ({
         color: '#FFFFFF',
         fontWeight: '800',
         transform: 'scale(1.1)',
-        boxShadow: `0 0 0 3px ${theme.colors.success}, 0 0 15px rgba(0,0,0,0.3)`,
-        textShadow: '0px 1px 3px rgba(0,0,0,0.4)'
+        boxShadow: `0 0 0 3px ${theme.colors.success}, 0 0 15px rgba(0,0,0,0.5)`,
+        textShadow: '0px 1px 3px rgba(0,0,0,0.5)',
+        // Add a more prominent inner glow effect
+        border: 'none',
+        outline: `3px solid ${theme.colors.success}`
       };
     }
 
     return baseStyle;
+  };
+
+  // Cell click animation (more prominent)
+  const cellTapAnimation = {
+    scale: 0.92,
+    backgroundColor: theme.colors.primary,
+    color: '#FFFFFF',
+    transition: { duration: 0.1 }
+  };
+
+  // Cell hover animation (more visible)
+  const cellHoverAnimation = {
+    scale: 1.08,
+    boxShadow: `0 0 5px rgba(0,0,0,0.3)`,
+    backgroundColor: `${theme.colors.card}`,
+    transition: { duration: 0.2 }
   };
 
   const handleCellClick = (number, index) => {
@@ -153,8 +175,8 @@ const BingoGrid = ({
             variants={cellVariants}
             onClick={() => handleCellClick(number, index)}
             style={getCellStyle(index)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+            whileHover={cellHoverAnimation}
+            whileTap={cellTapAnimation}
             data-number={number}
             data-index={index}
           >

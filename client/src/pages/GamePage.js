@@ -594,6 +594,12 @@ const GamePage = () => {
       return;
     }
     
+    // Check if we're already marking a cell (to prevent double clicks)
+    if (isMarking) {
+      console.log('Already processing a mark');
+      return;
+    }
+    
     // Get the number from the grid if not provided
     if (!number && grid && grid.length > 0) {
       const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
@@ -607,12 +613,25 @@ const GamePage = () => {
     
     console.log('Marking number:', number, 'at index:', cellIndex);
     
+    // Update UI immediately for better responsiveness
+    if (!markedCells.includes(cellIndex)) {
+      setMarkedCells(prev => [...prev, cellIndex]);
+    }
+    
+    // Set marking flag to prevent multiple clicks
+    setIsMarking(true);
+    
     // Send the mark to the server
     socket.emit('mark-number', {
       roomCode,
       number,
       cellIndex
     });
+    
+    // Clear marking flag after a short delay
+    setTimeout(() => {
+      setIsMarking(false);
+    }, 500);
   };
   
   // Add connection status indicator to UI
