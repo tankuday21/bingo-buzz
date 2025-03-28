@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { motion } from 'framer-motion';
+import { ThemeContext } from '../context/ThemeContext';
 
 // Emoji mapping for numbers (if selected)
 const emojiMap = {
@@ -27,17 +28,30 @@ const BingoGrid = ({
   symbols,
   customSymbols
 }) => {
+  const { theme } = useContext(ThemeContext);
+
   if (!grid || grid.length === 0) {
     // Show debug info when grid is missing but game may have started
     console.error("Grid is empty or missing:", { grid, isMyTurn, gameStarted: isMyTurn !== undefined });
     
     return (
-      <div className="bg-white rounded-lg shadow-lg p-4">
+      <div 
+        className="rounded-lg p-4"
+        style={{
+          background: theme.colors.card,
+          boxShadow: theme.effects.cardShadow,
+          backdropFilter: theme.effects.glassMorphism
+        }}
+      >
         <div className="flex flex-col items-center justify-center h-64">
-          <p className="text-gray-500 mb-4">Waiting for grid to load...</p>
+          <p className="text-red-500 mb-4">Waiting for grid to load...</p>
           <button 
             onClick={() => window.location.reload()} 
-            className="bg-primary-600 text-white px-4 py-2 rounded hover:bg-primary-700"
+            className="px-4 py-2 rounded"
+            style={{
+              background: theme.colors.primary[500],
+              color: 'white'
+            }}
           >
             Refresh Game
           </button>
@@ -86,8 +100,56 @@ const BingoGrid = ({
   // Calculate cell size based on grid dimensions
   const cellSize = `calc((100% - ${(grid.length - 1) * 0.5}rem) / ${grid.length})`;
 
+  // Cell animation variants
+  const cellVariants = {
+    unmarked: {
+      scale: 1,
+      backgroundColor: theme.colors.card,
+      transition: { duration: 0.2 }
+    },
+    marked: {
+      scale: 1.05,
+      backgroundColor: theme.colors.primary[500],
+      transition: { 
+        type: "spring",
+        stiffness: 300,
+        damping: 20
+      }
+    },
+    winning: {
+      scale: 1.1,
+      backgroundColor: theme.colors.success[500],
+      transition: { 
+        type: "spring",
+        stiffness: 300,
+        damping: 20
+      }
+    }
+  };
+
+  // Get cell state for animations
+  const getCellState = (i, j, number) => {
+    const isMarked = marked.has(number);
+    const isWinningCell = winningLines?.some(line => {
+      if (line.type === 'row' && line.index === i) return true;
+      if (line.type === 'col' && line.index === j) return true;
+      if (line.type === 'diag' && line.index === 0 && i === j) return true;
+      if (line.type === 'diag' && line.index === 1 && i === (grid.length - 1 - j)) return true;
+      return false;
+    });
+
+    return isWinningCell ? 'winning' : isMarked ? 'marked' : 'unmarked';
+  };
+
   return (
-    <div className="bg-white rounded-lg shadow-lg p-4">
+    <div 
+      className="rounded-lg p-4"
+      style={{
+        background: theme.colors.card,
+        boxShadow: theme.effects.cardShadow,
+        backdropFilter: theme.effects.glassMorphism
+      }}
+    >
       <div 
         className="grid gap-2" 
         style={{ 
@@ -97,34 +159,51 @@ const BingoGrid = ({
       >
         {processedGrid.map((row, i) => 
           row.map((number, j) => {
+            const cellState = getCellState(i, j, number);
             const isMarked = marked.has(number);
-            const isWinningCell = winningLines?.some(line => {
-              if (line.type === 'row' && line.index === i) return true;
-              if (line.type === 'col' && line.index === j) return true;
-              if (line.type === 'diag' && line.index === 0 && i === j) return true;
-              if (line.type === 'diag' && line.index === 1 && i === (grid.length - 1 - j)) return true;
-              return false;
-            });
 
             return (
-              <button
+              <motion.button
                 key={`${i}-${j}`}
                 onClick={() => onMarkNumber(number)}
                 disabled={!isMyTurn || isMarked}
+                variants={cellVariants}
+                initial="unmarked"
+                animate={cellState}
+                whileHover={!isMarked && isMyTurn ? { scale: 1.05 } : {}}
+                whileTap={!isMarked && isMyTurn ? { scale: 0.95 } : {}}
                 className={`
                   relative aspect-square flex items-center justify-center
                   text-lg sm:text-xl font-semibold rounded-lg
                   transition-all duration-200 ease-in-out
-                  ${isWinningCell ? 'bg-success-500 text-white' : 
-                    isMarked ? 'bg-primary-500 text-white' : 'bg-gray-50'}
-                  ${isMyTurn && !isMarked ? 'hover:bg-primary-100 cursor-pointer' : 'cursor-not-allowed'}
-                  border-2 border-transparent
-                  ${isMyTurn && !isMarked ? 'hover:border-primary-500' : ''}
+                  ${isMyTurn && !isMarked ? 'cursor-pointer' : 'cursor-not-allowed'}
+                  ${cellState === 'winning' ? 'text-white' : 
+                    cellState === 'marked' ? 'text-white' : 
+                    theme.colors.text}
                 `}
-                style={{ fontSize: `calc(16px + (24 - 16) * ((100vw - 320px) / (1600 - 320)))` }}
+                style={{
+                  fontSize: `calc(16px + (24 - 16) * ((100vw - 320px) / (1600 - 320)))`,
+                  border: `2px solid ${theme.colors.border}`,
+                  boxShadow: theme.effects.cardShadow
+                }}
               >
                 {number}
-              </button>
+                {cellState === 'marked' && (
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="absolute inset-0 flex items-center justify-center"
+                  >
+                    <div 
+                      className="absolute inset-0 rounded-lg"
+                      style={{
+                        background: theme.colors.primary[500],
+                        opacity: 0.2
+                      }}
+                    />
+                  </motion.div>
+                )}
+              </motion.button>
             );
           })
         )}

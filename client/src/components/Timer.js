@@ -1,31 +1,62 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext } from 'react';
+import { motion } from 'framer-motion';
+import { ThemeContext } from '../context/ThemeContext';
 
 const Timer = ({ seconds }) => {
-  const [progress, setProgress] = useState(100);
-  
-  useEffect(() => {
-    const percentage = (seconds / 15) * 100;
-    setProgress(percentage);
-  }, [seconds]);
-  
+  const { theme } = useContext(ThemeContext);
+
+  // Calculate progress percentage
+  const progress = (seconds / 15) * 100;
+
+  // Get color based on remaining time
+  const getColor = () => {
+    if (seconds <= 5) {
+      return theme.colors.primary[700];
+    } else if (seconds <= 10) {
+      return theme.colors.primary[600];
+    }
+    return theme.colors.primary[500];
+  };
+
   return (
-    <div className="w-full">
-      <div className="flex justify-between mb-1 text-sm">
-        <span>Time remaining:</span>
-        <span className={`font-bold ${seconds <= 5 ? 'text-red-500' : ''}`}>
-          {seconds}s
-        </span>
-      </div>
-      <div className="timer-bar">
-        <div 
-          className="timer-progress"
-          style={{ 
+    <div className="relative">
+      {/* Timer background */}
+      <div 
+        className="h-2 rounded-full"
+        style={{
+          background: theme.colors.primary[100],
+          boxShadow: theme.effects.cardShadow
+        }}
+      >
+        {/* Timer progress bar */}
+        <motion.div
+          className="h-full rounded-full"
+          style={{
+            background: getColor(),
             width: `${progress}%`,
-            backgroundColor: seconds <= 5 ? 'var(--secondary-color)' : 'var(--primary-color)',
-            transition: 'width 1s linear, background-color 0.5s ease'
+            transition: 'width 0.3s linear'
           }}
-        ></div>
+          initial={{ width: '100%' }}
+          animate={{ width: `${progress}%` }}
+        />
       </div>
+
+      {/* Timer text */}
+      <motion.div
+        className="absolute -top-6 left-1/2 transform -translate-x-1/2"
+        initial={{ scale: 1 }}
+        animate={{ 
+          scale: seconds <= 5 ? [1, 1.2, 1] : 1,
+          color: getColor()
+        }}
+        transition={{ 
+          duration: 0.3,
+          repeat: seconds <= 5 ? Infinity : 0
+        }}
+      >
+        <span className="font-bold">{seconds}</span>
+        <span className="text-sm ml-1">s</span>
+      </motion.div>
     </div>
   );
 };

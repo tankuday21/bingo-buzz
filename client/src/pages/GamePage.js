@@ -534,38 +534,62 @@ const GamePage = () => {
       {showConfetti && <Confetti recycle={false} numberOfPieces={500} />}
       
       {/* Header */}
-      <header className="bg-gradient-to-r from-primary-600 to-accent-600 p-4 text-white">
+      <header 
+        className="p-4"
+        style={{
+          background: `linear-gradient(to right, ${theme.colors.primary[600]}, ${theme.colors.accent[600]})`,
+          color: 'white'
+        }}
+      >
         <div className="container mx-auto flex flex-wrap justify-between items-center">
-          <h1 className="text-3xl font-bold">Bingo Buzz</h1>
+          <motion.h1 
+            className="text-3xl font-bold"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            Bingo Buzz
+          </motion.h1>
           
           <div className="flex items-center space-x-4">
             {/* Room Code */}
-            <div className="bg-white text-black p-2 rounded flex items-center">
-              <span className="mr-2 font-mono font-bold">{roomCode}</span>
+            <motion.div 
+              className="p-2 rounded flex items-center"
+              style={{
+                background: theme.colors.card,
+                boxShadow: theme.effects.cardShadow,
+                backdropFilter: theme.effects.glassMorphism
+              }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <span className="mr-2 font-mono font-bold" style={{ color: theme.colors.text }}>
+                {roomCode}
+              </span>
               <button 
                 onClick={copyRoomCode}
-                className="text-primary-600 hover:text-primary-800"
+                style={{ color: theme.colors.primary[600] }}
+                className="hover:opacity-80"
                 title="Copy room code"
               >
                 {copySuccess ? '✓' : '📋'}
               </button>
-            </div>
+            </motion.div>
             
             <ThemeSwitcher />
             
-            <button
+            <motion.button
               onClick={goHome}
-              className="bg-white text-primary-600 px-3 py-1 rounded hover:bg-gray-100"
+              className="px-3 py-1 rounded hover:opacity-80"
+              style={{
+                background: theme.colors.card,
+                color: theme.colors.primary[600]
+              }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
             >
               Exit
-            </button>
-            
-            <button
-              onClick={debugForceGridGeneration}
-              className="bg-white text-primary-600 px-3 py-1 rounded hover:bg-gray-100"
-            >
-              Debug: Force Grid
-            </button>
+            </motion.button>
           </div>
         </div>
       </header>
@@ -574,27 +598,46 @@ const GamePage = () => {
       <main className="flex-1 container mx-auto p-4">
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Left sidebar - Players */}
-          <div className="lg:w-1/4 bg-white rounded-lg shadow-lg p-4">
-            <h2 className="text-xl font-bold mb-4">Players</h2>
+          <motion.div 
+            className="lg:w-1/4 rounded-lg p-4"
+            style={{
+              background: theme.colors.card,
+              boxShadow: theme.effects.cardShadow,
+              backdropFilter: theme.effects.glassMorphism
+            }}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <h2 className="text-xl font-bold mb-4" style={{ color: theme.colors.text }}>Players</h2>
             <PlayersList players={players} currentTurn={currentTurn} />
             
             {/* Host controls */}
             {isHost && !gameStarted && (
               <div className="mt-4">
-                <button
+                <motion.button
                   onClick={handleStartGame}
-                  className="w-full py-2 bg-primary-600 text-white font-bold rounded hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
+                  className="w-full py-2 font-bold rounded transition-colors"
+                  style={{
+                    background: theme.colors.primary[600],
+                    color: 'white'
+                  }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                 >
                   Start Game
-                </button>
+                </motion.button>
               </div>
             )}
             
             {/* Game status */}
             {gameStarted && (
               <div className="mt-4">
-                <h3 className="font-semibold">Current Turn</h3>
-                <p className={`${isMyTurn ? 'text-primary-600 font-bold' : ''}`}>
+                <h3 className="font-semibold" style={{ color: theme.colors.text }}>Current Turn</h3>
+                <p style={{ 
+                  color: isMyTurn ? theme.colors.primary[600] : theme.colors.text,
+                  fontWeight: isMyTurn ? 'bold' : 'normal'
+                }}>
                   {isMyTurn ? 'Your Turn' : `${currentTurnName}'s Turn`}
                 </p>
                 
@@ -603,96 +646,128 @@ const GamePage = () => {
                 </div>
               </div>
             )}
-          </div>
+          </motion.div>
           
           {/* Main game area */}
-          <div className="lg:w-1/2 flex flex-col items-center">
+          <motion.div 
+            className="lg:w-1/2 flex flex-col items-center"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
             {!gameStarted && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="bg-white rounded-lg shadow-lg p-6 mb-6 w-full"
+                className="rounded-lg p-6 mb-6 w-full"
+                style={{
+                  background: theme.colors.card,
+                  boxShadow: theme.effects.cardShadow,
+                  backdropFilter: theme.effects.glassMorphism
+                }}
               >
-                <h2 className="text-2xl font-bold mb-4">Waiting for players</h2>
-                {isHost ? (
-                  <p>Invite players to join using the room code, then press Start Game.</p>
-                ) : (
-                  <p>Waiting for the host to start the game...</p>
-                )}
+                <h2 className="text-2xl font-bold mb-4" style={{ color: theme.colors.text }}>
+                  Waiting for players
+                </h2>
+                <p style={{ color: theme.colors.text }}>
+                  {isHost ? 
+                    'Invite players to join using the room code, then press Start Game.' :
+                    'Waiting for the host to start the game...'
+                  }
+                </p>
               </motion.div>
             )}
             
             {/* Bingo Grid */}
             <div className="w-full">
-              {(!grid || grid.length === 0) ? (
-                <div className="bg-white rounded-lg shadow-lg p-4">
-                  <div className="flex flex-col items-center justify-center h-64">
-                    <p className="text-red-500 mb-4">Bingo board is missing! This is a technical issue.</p>
-                    <div className="flex space-x-4">
-                      <button 
-                        onClick={debugForceGridGeneration}
-                        className="bg-primary-600 text-white px-4 py-2 rounded hover:bg-primary-700 mr-2"
-                      >
-                        Regenerate Board
-                      </button>
-                      <button 
-                        onClick={() => window.location.reload()}
-                        className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
-                      >
-                        Reload Game
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <BingoGrid 
-                  grid={grid} 
-                  marked={marked} 
-                  onMarkNumber={gameStarted ? handleMarkNumber : undefined} 
-                  isMyTurn={isMyTurn && gameStarted}
-                  winningLines={winningLines}
-                  symbols={symbols}
-                />
-              )}
+              <BingoGrid 
+                grid={grid} 
+                marked={marked} 
+                onMarkNumber={gameStarted ? handleMarkNumber : undefined} 
+                isMyTurn={isMyTurn && gameStarted}
+                winningLines={winningLines}
+                symbols={symbols}
+              />
             </div>
-          </div>
+          </motion.div>
           
           {/* Right sidebar - Game Info */}
-          <div className="lg:w-1/4 bg-white rounded-lg shadow-lg p-4">
-            <h2 className="text-xl font-bold mb-4">Marked Numbers</h2>
+          <motion.div 
+            className="lg:w-1/4 rounded-lg p-4"
+            style={{
+              background: theme.colors.card,
+              boxShadow: theme.effects.cardShadow,
+              backdropFilter: theme.effects.glassMorphism
+            }}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+          >
+            <h2 className="text-xl font-bold mb-4" style={{ color: theme.colors.text }}>
+              Marked Numbers
+            </h2>
             {markedHistory.length > 0 ? (
               <div className="max-h-80 overflow-y-auto">
                 {markedHistory.map((item, index) => (
-                  <div key={index} className="mb-1 p-2 border-b">
-                    <span className="font-bold">{item.number}</span>
-                    <span className="text-sm"> by {item.player}</span>
-                    {item.automatic && <span className="text-xs text-gray-500"> (auto)</span>}
-                  </div>
+                  <motion.div 
+                    key={index} 
+                    className="mb-1 p-2 border-b"
+                    style={{ borderColor: theme.colors.border }}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <span className="font-bold" style={{ color: theme.colors.primary[600] }}>
+                      {item.number}
+                    </span>
+                    <span style={{ color: theme.colors.text }}> by {item.player}</span>
+                    {item.automatic && (
+                      <span className="text-xs" style={{ color: theme.colors.text, opacity: 0.7 }}>
+                        {' '}(auto)
+                      </span>
+                    )}
+                  </motion.div>
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500">No numbers marked yet</p>
+              <p style={{ color: theme.colors.text, opacity: 0.7 }}>
+                No numbers marked yet
+              </p>
             )}
             
             {/* Theme & Symbols Settings */}
             <div className="mt-6">
-              <h3 className="font-bold mb-2">Grid Display</h3>
+              <h3 className="font-bold mb-2" style={{ color: theme.colors.text }}>
+                Grid Display
+              </h3>
               <div className="flex space-x-2 mb-2">
-                <button 
+                <motion.button 
                   onClick={() => setSymbols('numbers')}
-                  className={`px-3 py-1 rounded ${symbols === 'numbers' ? 'bg-primary-600 text-white' : 'bg-gray-200'}`}
+                  className="px-3 py-1 rounded"
+                  style={{
+                    background: symbols === 'numbers' ? theme.colors.primary[600] : theme.colors.primary[50],
+                    color: symbols === 'numbers' ? 'white' : theme.colors.text
+                  }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                 >
                   Numbers
-                </button>
-                <button 
+                </motion.button>
+                <motion.button 
                   onClick={() => setSymbols('emojis')}
-                  className={`px-3 py-1 rounded ${symbols === 'emojis' ? 'bg-primary-600 text-white' : 'bg-gray-200'}`}
+                  className="px-3 py-1 rounded"
+                  style={{
+                    background: symbols === 'emojis' ? theme.colors.primary[600] : theme.colors.primary[50],
+                    color: symbols === 'emojis' ? 'white' : theme.colors.text
+                  }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                 >
                   Emojis
-                </button>
+                </motion.button>
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       </main>
       
