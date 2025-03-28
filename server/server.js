@@ -150,15 +150,20 @@ async function connectToMongoDB() {
       return;
     }
 
+    // Handle connection inside a try/catch to prevent crashing the entire server
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/bingo-buzz', {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
       retryWrites: true,
-      w: 'majority',
-      connectTimeoutMS: 10000,
+      connectTimeoutMS: 30000,
+      // Disable buffering to prevent memory issues
+      bufferCommands: false,
+    }).catch(err => {
+      throw err;  // Re-throw to be caught by the outer catch
     });
+    
     console.log('Connected to MongoDB');
     mongoConnected = true;
     mongoRetryCount = 0;
@@ -172,8 +177,10 @@ async function connectToMongoDB() {
       setTimeout(connectToMongoDB, MONGO_RETRY_DELAY * mongoRetryCount);
     } else {
       console.error('Max MongoDB retry attempts reached. Continuing without MongoDB - leaderboard functionality will be limited');
+      // Ensure the app continues to function without MongoDB
+      mongoConnected = false;
       // Emit a server-wide event to notify about MongoDB status
-      io.emit('mongodb-status', { connected: false });
+      io && io.emit && io.emit('mongodb-status', { connected: false });
     }
   }
 }
@@ -1225,11 +1232,6 @@ function startTurn(roomCode) {
   const game = games[roomCode];
   if (!game || !game.started) return;
 
-  const currentPlayer = game.players.find(p => p.id === game.currentTurn);
-  if (!currentPlayer) return;
-
-  if (LOG_LEVELS.DEBUG) console.log(`Starting turn for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}, turn index: ${game.turnIndex}`);
-  
   // Ensure turnIndex is within bounds
   game.turnIndex = game.turnIndex % game.players.length;
   
@@ -1243,6 +1245,8 @@ function startTurn(roomCode) {
   // Set current turn
   game.currentTurn = currentPlayer.id;
   
+  if (LOG_LEVELS.DEBUG) console.log(`Starting turn for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}, turn index: ${game.turnIndex}`);
+
   // Notify all players about whose turn it is
   io.to(roomCode).emit('turn-started', {
     playerId: game.currentTurn,
@@ -1488,7 +1492,44 @@ const checkWin = (game) => {
 };
 
 // Start the server
-const PORT = 5000; // Server should run on port 5000 according to project specifications
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+// Add graceful shutdown handlers
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+function gracefulShutdown() {
+  console.log('Received shutdown signal. Closing server gracefully...');
+  
+  // Set a timeout to force close if graceful shutdown takes too long
+  const forceShutdownTimeout = setTimeout(() => {
+    console.error('Forcing server shutdown after timeout');
+    process.exit(1);
+  }, 30000); // 30 seconds
+  
+  // Close the HTTP server
+  server.close(() => {
+    console.log('HTTP server closed');
+    
+    // Close MongoDB connection
+    if (mongoose.connection.readyState !== 0) {
+      mongoose.connection.close(false)
+        .then(() => {
+          console.log('MongoDB connection closed');
+          clearTimeout(forceShutdownTimeout);
+          process.exit(0);
+        })
+        .catch(err => {
+          console.error('Error closing MongoDB connection:', err);
+          clearTimeout(forceShutdownTimeout);
+          process.exit(1);
+        });
+    } else {
+      clearTimeout(forceShutdownTimeout);
+      process.exit(0);
+    }
+  });
+}
