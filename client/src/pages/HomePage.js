@@ -38,9 +38,9 @@ const HomePage = () => {
       console.log('Sending request to:', '/api/games');
       console.log('Request payload:', { username, gridSize });
       
-      // Use absolute URL to avoid proxy issues
-      const apiUrl = 'http://localhost:5000/api/games';
-      console.log('Using absolute API URL:', apiUrl);
+      // Use environment variable for API URL
+      const apiUrl = `${process.env.REACT_APP_SERVER_URL}/api/games`;
+      console.log('Using API URL:', apiUrl);
       
       const response = await axios.post(apiUrl, { 
         username, 
@@ -122,9 +122,9 @@ const HomePage = () => {
     
     try {
       setIsJoining(true);
-      // Use absolute URL to avoid proxy issues
-      const apiUrl = 'http://localhost:5000/api/join-room';
-      console.log('Using absolute API URL for joining:', apiUrl);
+      // Use environment variable for API URL
+      const apiUrl = `${process.env.REACT_APP_SERVER_URL}/api/join-room`;
+      console.log('Using API URL for joining:', apiUrl);
       
       await axios.post(apiUrl, { roomCode });
       
