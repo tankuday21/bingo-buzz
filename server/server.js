@@ -6,7 +6,7 @@ const { nanoid } = require('nanoid');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const LeaderboardModel = require('./models/leaderboard');
-const { generateGrid, generateUniqueGrid, checkWin, getUnmarkedNumbers, generateUniquePlayerGrid } = require('./utils/gameUtils');
+const { generateGrid, generateUniqueGrid, checkWin as checkWinUtils, getUnmarkedNumbers, generateUniquePlayerGrid } = require('./utils/gameUtils');
 
 // Load environment variables
 dotenv.config();
@@ -356,7 +356,7 @@ app.get('/health', (req, res) => {
     let totalPlayers = 0;
     let activePlayers = 0;
     
-    for (const roomCode in games) {
+    for (const [roomCode, game] of Object.entries(games)) {
       const game = games[roomCode];
       if (game && game.players) {
         totalPlayers += game.players.length;
@@ -437,7 +437,7 @@ io.on('connection', (socket) => {
   
   // Apply activity tracking to all events
   socket.onAny(updateActivity);
-  
+
   // Handle ping from client
   socket.on('ping', () => {
     const connection = activeConnections.get(socket.id);
@@ -848,7 +848,7 @@ io.on('connection', (socket) => {
       });
       
       // Check for a winner
-      const winner = checkWin(game);
+      const winner = checkWinUtils(game);
       if (winner) {
         const winningPlayer = game.players.find(p => p.id === winner.playerId);
         
@@ -858,6 +858,9 @@ io.on('connection', (socket) => {
         
         // Update winning player's score
         winningPlayer.score = (winningPlayer.score || 0) + score;
+        
+        // Save to leaderboard
+        updateLeaderboard(winningPlayer, score);
         
         // Notify all players
         io.to(roomCode).emit('game-won', {
@@ -948,7 +951,7 @@ io.on('connection', (socket) => {
           });
           
           // Check for winner after automatic marking
-          const winner = checkWin(game);
+          const winner = checkWinUtils(game);
           if (winner) {
             const winningPlayer = game.players.find(p => p.id === winner.playerId);
             
@@ -995,12 +998,12 @@ io.on('connection', (socket) => {
     }
     
     // Check if player exists in game
-    const player = game.players.find(p => p.id === socket.id);
-    if (!player) {
+      const player = game.players.find(p => p.id === socket.id);
+      if (!player) {
       console.log(`Player ${socket.id} not found in game ${roomCode}, cannot send grid`);
-      return socket.emit('error', 'Player not found in game');
-    }
-    
+        return socket.emit('error', 'Player not found in game');
+      }
+      
     // Get this player's grid
     const playerGrid = game.grids[socket.id];
     
@@ -1119,15 +1122,15 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('player-ready', {
       username,
       readyPlayers: game.readyPlayers
-    });
   });
+});
 
   // Handle request for already marked numbers (when a client gets its grid or reconnects)
   socket.on('request-marked-numbers', ({ roomCode }) => {
     console.log(`Player ${socket.id} requesting marked numbers for room ${roomCode}`);
-    const game = games[roomCode];
+  const game = games[roomCode];
     
-    if (!game) {
+  if (!game) {
       return socket.emit('error', 'Room not found');
     }
     
@@ -1139,9 +1142,9 @@ io.on('connection', (socket) => {
     
     if (!game.markedNumbers || game.markedNumbers.size === 0) {
       console.log(`No marked numbers to send for room ${roomCode}`);
-      return;
-    }
-    
+    return;
+  }
+  
     // Convert the Set to an Array for sending
     const markedNumbersArray = Array.from(game.markedNumbers);
     console.log(`Sending ${markedNumbersArray.length} marked numbers to player ${socket.id} in room ${roomCode}:`, markedNumbersArray);
@@ -1207,8 +1210,8 @@ io.on('connection', (socket) => {
     // Check if the socket is still connected
     if (!socket.connected) {
       clearInterval(clientCleanupInterval);
-      return;
-    }
+    return;
+  }
     
     // Check if the socket has been inactive for too long (10 minutes)
     const info = activeConnections.get(socket.id);
@@ -1231,7 +1234,7 @@ io.on('connection', (socket) => {
 function startTurn(roomCode) {
   const game = games[roomCode];
   if (!game || !game.started) return;
-
+  
   // Ensure turnIndex is within bounds
   game.turnIndex = game.turnIndex % game.players.length;
   
@@ -1246,7 +1249,7 @@ function startTurn(roomCode) {
   game.currentTurn = currentPlayer.id;
   
   if (LOG_LEVELS.DEBUG) console.log(`Starting turn for ${currentPlayer.username} (${game.currentTurn}) in room ${roomCode}, turn index: ${game.turnIndex}`);
-
+  
   // Notify all players about whose turn it is
   io.to(roomCode).emit('turn-started', {
     playerId: game.currentTurn,
@@ -1315,7 +1318,7 @@ function startTurn(roomCode) {
       });
       
       // Check for a winner
-      const winner = checkWin(game);
+      const winner = checkWinUtils(game);
       if (winner) {
         const winningPlayer = game.players.find(p => p.id === winner.playerId);
         
@@ -1361,7 +1364,7 @@ function nextTurn(roomCode) {
   }
   
   // Check for any winner before moving to next turn
-  const winner = checkWin(game);
+  const winner = checkWinUtils(game);
   if (winner) {
     const winningPlayer = game.players.find(p => p.id === winner.playerId);
     
@@ -1430,25 +1433,15 @@ async function updateLeaderboard(player, score) {
   }
 }
 
-// Optimize automatic marking in startTurn function
+// Helper function to get random unmarked number
 const getRandomUnmarkedNumber = (grid, markedNumbers) => {
-  if (!grid) return null;
-  
-  // Flatten the grid and filter out already marked numbers
   const flatGrid = grid.flat();
-  const unmarkedNumbers = flatGrid.filter(num => !markedNumbers.has(num));
-  
-  if (unmarkedNumbers.length === 0) {
-    return null;
-  }
-  
-  // Pick a random number from unmarked numbers
-  const randomIndex = Math.floor(Math.random() * unmarkedNumbers.length);
-  return unmarkedNumbers[randomIndex];
+  const unmarkedNumbers = flatGrid.filter(num => !markedNumbers.includes(num));
+  return unmarkedNumbers[Math.floor(Math.random() * unmarkedNumbers.length)];
 };
 
-// Optimize logs in checkWin function
-const checkWin = (game) => {
+// Helper function to check game win
+const checkGameWin = (game) => {
   // Only proceed if the game is active and has marked numbers
   if (!game || !game.started || !game.markedNumbers || game.markedNumbers.size < 5) {
     return null;
@@ -1492,7 +1485,7 @@ const checkWin = (game) => {
 };
 
 // Start the server
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
