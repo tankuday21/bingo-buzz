@@ -1372,31 +1372,29 @@ io.on('connection', (socket) => {
         game.timer = null;
       }
       
-      // ** Explicitly confirm to the sender first - with extra logging **
-      const confirmationPayload = {
+      // ** Revert to single broadcast to the whole room (including sender) **
+      const broadcastPayload = {
         number: number,
         markedBy: socket.id,
         automatic: false
       };
       try {
-        console.log(`[mark-number] PRE-EMIT: Attempting direct emit of number-marked to ${socket.id} with payload:`, confirmationPayload);
-        socket.emit('number-marked', confirmationPayload);
-        console.log(`[mark-number] POST-EMIT: Successfully executed emit direct confirmation to ${socket.id}`);
+        console.log(`[mark-number] PRE-EMIT (Broadcast): Attempting emit of number-marked to room ${roomCode} with payload:`, broadcastPayload);
+        io.to(roomCode).emit('number-marked', broadcastPayload);
+        console.log(`[mark-number] POST-EMIT (Broadcast): Successfully executed emit number-marked to room ${roomCode}`);
       } catch (emitError) {
-        // This catch block might not catch low-level network errors, but catches sync errors during emit setup.
-        console.error(`[mark-number] CRITICAL: Error occurred DURING socket.emit to ${socket.id}:`, emitError);
+        console.error(`[mark-number] CRITICAL: Error occurred DURING io.to(${roomCode}).emit:`, emitError);
         // Attempt to notify the client about this specific failure
-        try { socket.emit('error', 'Server failed during confirmation emit'); } catch(e) { console.error("Failed even to emit the emit error", e); }
+        try { socket.emit('error', 'Server failed during broadcast emit'); } catch(e) { console.error("Failed even to emit the broadcast error notice", e); }
       }
 
-      // Notify OTHER players in the room
-      // Using socket.broadcast.to sends to everyone in the room EXCEPT the sender
-      console.log(`[mark-number] Broadcasting number-marked to room ${roomCode} (excluding sender) for number ${number}`);
-      socket.broadcast.to(roomCode).emit('number-marked', {
-        number: number,
-        markedBy: socket.id,
-        automatic: false
-      });
+      // ~~ Remove separate sender confirmation and broadcast ~~
+      /*
+      const confirmationPayload = { ... };
+      try { ... socket.emit ... } catch { ... }
+      console.log(`[mark-number] Broadcasting number-marked ...`);
+      socket.broadcast.to(roomCode).emit(...) 
+      */
       
       // Check for a winner
       const winner = checkWinUtils(game);
