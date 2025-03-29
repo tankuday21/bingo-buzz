@@ -22,6 +22,7 @@ const GamePage = () => {
   
   // Game state
   const [grid, setGrid] = useState([]);
+  const [isGridReady, setIsGridReady] = useState(false);
   const [players, setPlayers] = useState([]);
   const [markedCells, setMarkedCells] = useState([]);
   const [currentTurn, setCurrentTurn] = useState(null);
@@ -117,6 +118,7 @@ const GamePage = () => {
     
     // Reset game state on mount
     setGrid([]);
+    setIsGridReady(false);
     setPlayers([]);
     setMarkedCells([]);
     setCurrentTurn(null);
@@ -168,6 +170,7 @@ const GamePage = () => {
       socket.off('sync-marked-numbers', handleSyncMarkedNumbers);
       clearInterval(timerIntervalRef.current);
       hasJoinedRef.current = false;
+      setIsGridReady(false);
     };
   }, [roomCode, username, navigate]);
   
@@ -326,47 +329,101 @@ const GamePage = () => {
   }, [grid]);
   
   // Event handler functions
-  const handleGridAssigned = (newGrid) => {
-    if (!newGrid || !Array.isArray(newGrid) || newGrid.length === 0) {
-      console.error('Invalid grid received:', newGrid);
-      return;
-    }
-    
-    // Deep copy the grid to avoid reference issues
-    const gridCopy = JSON.parse(JSON.stringify(newGrid));
-    if (DEBUG) {
-      console.log('Grid assigned event received:', JSON.stringify(newGrid));
-      console.log('Setting grid state with valid grid data. Grid size:', 
-                Array.isArray(gridCopy[0]) ? 
-                `${gridCopy.length}x${gridCopy[0].length}` : 
-                `${gridCopy.length} (flat array)`);
-      console.log('Previous grid state empty:', !grid || grid.length === 0);
-    }
-    
-    // Force immediate state update via callback to ensure it's fully processed
-    setGrid(() => gridCopy);
-    
-    // Explicitly acknowledge grid reception to the server
-    if (roomCode && socketConnected) {
-      if (DEBUG) console.log('Sending grid-ready acknowledgment to server');
-      setTimeout(() => {
-        socket.emit('grid-ready', { roomCode });
-      }, 300); // Short delay to ensure state is updated
-    }
-    
-    // Process any pending marked numbers after the grid is set
-    setTimeout(() => {
+  const handleGridAssigned = (assignedGrid) => {
+    if (DEBUG) console.log('[handleGridAssigned] Received grid:', assignedGrid);
+    if (assignedGrid && Array.isArray(assignedGrid) && assignedGrid.length > 0) {
+      setGrid(assignedGrid);
+      setIsGridReady(true);
+      console.log('[handleGridAssigned] Grid state updated and set to ready.');
+      
+      // Process any pending marked numbers immediately after grid is ready
       if (pendingMarkedNumbersRef.current.length > 0) {
-        if (DEBUG) console.log(`Processing ${pendingMarkedNumbersRef.current.length} queued numbers after grid assignment`);
-        const pendingNumbers = [...pendingMarkedNumbersRef.current];
-        pendingMarkedNumbersRef.current = [];
+        console.log(`[handleGridAssigned] Processing ${pendingMarkedNumbersRef.current.length} pending marked numbers.`);
+        const numbersToProcess = [...pendingMarkedNumbersRef.current];
+        pendingMarkedNumbersRef.current = []; // Clear the queue
         
-        pendingNumbers.forEach(pendingNumber => {
-          if (DEBUG) console.log('Processing queued number after grid assignment:', pendingNumber);
-          handleNumberMarked(pendingNumber);
-        });
+        // Use the newly set grid for processing
+        processMarkedNumbers(numbersToProcess, assignedGrid);
       }
-    }, 500); // Increase delay to ensure grid state is updated
+    } else {
+      console.error('[handleGridAssigned] Received invalid grid data:', assignedGrid);
+      setIsGridReady(false); // Ensure flag is false if grid is invalid
+      // Optionally request grid again if it's invalid?
+      // socket.emit('request-grid', { roomCode });
+    }
+  };
+  
+  // Separate function to process marked numbers (used by handleNumberMarked and handleGridAssigned)
+  const processMarkedNumbers = (numbers, currentGrid) => {
+    if (!currentGrid || currentGrid.length === 0) {
+        console.error("[processMarkedNumbers] Attempted to process numbers but grid is invalid.", currentGrid);
+        return; 
+    }
+    console.log('[processMarkedNumbers] Processing numbers:', numbers, 'with grid:', currentGrid);
+    const flatGrid = currentGrid.flat();
+    const newMarkedIndices = [];
+
+    numbers.forEach(number => {
+        const cellIndex = flatGrid.findIndex(cellNum => cellNum === number);
+        if (cellIndex !== -1) {
+            newMarkedIndices.push(cellIndex);
+        } else {
+            console.warn(`[processMarkedNumbers] Number ${number} not found in the current grid.`);
+        }
+    });
+
+    if (newMarkedIndices.length > 0) {
+        console.log('[processMarkedNumbers] Updating markedCells state with indices:', newMarkedIndices);
+        setMarkedCells(prev => {
+            const updatedSet = new Set(prev);
+            newMarkedIndices.forEach(index => updatedSet.add(index));
+            // Convert back to array if necessary, or keep as Set if BingoGrid handles it
+            return Array.from(updatedSet); 
+        });
+        // Update marked history as well
+        setMarkedHistory(prev => [...prev, ...numbers]);
+    }
+  };
+
+  // Handle receiving a marked number from the server
+  const handleNumberMarked = ({ number }) => {
+    if (DEBUG) console.log('[handleNumberMarked] Received marked number:', number);
+    
+    if (isGridReady) {
+      // Grid is ready, process immediately using the current grid state
+      console.log('[handleNumberMarked] Grid is ready. Processing number immediately.');
+      // Pass the current grid state directly to avoid closure issues
+      setGrid(currentGrid => {
+        processMarkedNumbers([number], currentGrid);
+        return currentGrid; // Return currentGrid to satisfy setState updater form
+      });
+    } else {
+      // Grid is not ready, queue the number
+      console.warn(`[handleNumberMarked] Grid not ready when receiving number ${number}. Queuing.`);
+      pendingMarkedNumbersRef.current.push(number);
+      // **DO NOT repeatedly request grid here - rely on initial join/rejoin logic**
+      // console.log('Requesting grid from server because it was not loaded...');
+      // socket.emit('request-grid', { roomCode }); 
+    }
+  };
+
+  // Handle receiving a full sync of marked numbers
+  const handleSyncMarkedNumbers = ({ markedNumbers }) => {
+    if (DEBUG) console.log('[handleSyncMarkedNumbers] Received sync event with numbers:', markedNumbers);
+    if (Array.isArray(markedNumbers)) {
+        if (isGridReady) {
+            // Grid is ready, process immediately
+            console.log('[handleSyncMarkedNumbers] Grid is ready. Processing synced numbers.');
+            setGrid(currentGrid => {
+              processMarkedNumbers(markedNumbers, currentGrid);
+              return currentGrid;
+            });
+        } else {
+            // Grid not ready, replace the queue with the synced list
+            console.warn('[handleSyncMarkedNumbers] Grid not ready. Replacing queue with synced numbers.');
+            pendingMarkedNumbersRef.current = markedNumbers;
+        }
+    }
   };
   
   // Fix player mapping in the waiting room section
@@ -579,92 +636,6 @@ const GamePage = () => {
     }
   };
   
-  const handleNumberMarked = ({ number, markedBy, player, automatic }) => {
-    if (DEBUG) console.log('Number marked event received:', { number, markedBy, player, automatic });
-    
-    if (!number) {
-      console.error('No number provided in number-marked event');
-      return;
-    }
-    
-    // Make sure number is properly parsed as an integer
-    const numberToFind = typeof number === 'string' ? parseInt(number, 10) : number;
-    
-    if (isNaN(numberToFind)) {
-      console.error('Invalid number format received:', number);
-      return;
-    }
-    
-    if (!grid || !grid.length) {
-      console.warn(`Grid not loaded when receiving number ${numberToFind}, requesting grid from server`);
-      
-      // Immediately request the grid from server
-      socket.emit('request-grid', { roomCode });
-      
-      // Store the marked number to process later
-      pendingMarkedNumbersRef.current.push({
-        number: numberToFind,
-        markedBy,
-        player,
-        automatic,
-        queuedAt: Date.now()
-      });
-      return;
-    }
-    
-    if (DEBUG) console.log(`Finding cell index for number ${numberToFind} in grid`);
-    
-    // Create a flat version of the grid for easier lookup
-    const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
-    
-    // Find the index of this number in the grid
-    let cellIndex = -1;
-    for (let i = 0; i < flatGrid.length; i++) {
-      const cellNum = flatGrid[i];
-      const cellNumInt = typeof cellNum === 'string' ? parseInt(cellNum, 10) : cellNum;
-      
-      if (cellNumInt === numberToFind) {
-        cellIndex = i;
-        break;
-      }
-    }
-    
-    if (DEBUG) console.log(`Number ${numberToFind} is at cell index ${cellIndex} in my grid`);
-    
-    // If the number is found in our grid, mark it
-    if (cellIndex !== -1) {
-      if (DEBUG) console.log(`Marking cell ${cellIndex} for number ${numberToFind}`);
-      
-      // Check if this cell is already marked to avoid duplicates
-      if (!markedCells.includes(cellIndex)) {
-        setMarkedCells(prevMarkedCells => {
-          if (DEBUG) console.log(`Adding cell ${cellIndex} to marked cells`);
-          return [...prevMarkedCells, cellIndex];
-        });
-      } else {
-        if (DEBUG) console.log(`Cell ${cellIndex} already marked`);
-      }
-      
-      // Add to history for reference
-      setMarkedHistory(prev => [
-        ...prev,
-        {
-          cellIndex,
-          number: numberToFind,
-          player: player?.username || 'Unknown',
-          automatic: !!automatic
-        }
-      ]);
-      
-      // Play sound effect
-      if (audioRef.current) {
-        audioRef.current.play().catch(e => console.log('Audio play error:', e));
-      }
-    } else {
-      console.warn(`Number ${numberToFind} not found in grid`);
-    }
-  };
-  
   const handleGameWon = ({ player, lines, score }) => {
     console.log('Game won by:', player.username);
     setWinner(player);
@@ -798,101 +769,6 @@ const GamePage = () => {
       </div>
     </div>
   );
-  
-  // Optimize handleSyncMarkedNumbers to reduce logging
-  const handleSyncMarkedNumbers = ({ markedNumbers }) => {
-    if (DEBUG) console.log('Received sync-marked-numbers event with', markedNumbers.length, 'numbers');
-    
-    if (!Array.isArray(markedNumbers) || markedNumbers.length === 0) {
-      if (DEBUG) console.log('No marked numbers to sync');
-      return;
-    }
-    
-    if (!grid || grid.length === 0) {
-      console.warn('Cannot sync marked numbers - grid not loaded yet');
-      
-      // Store these numbers in pending queue with high priority
-      markedNumbers.forEach(number => {
-        pendingMarkedNumbersRef.current.push({
-          number,
-          markedBy: 'system-sync',
-          player: null,
-          automatic: false,
-          queuedAt: Date.now(),
-          highPriority: true
-        });
-      });
-      
-      // Request grid explicitly
-      if (DEBUG) console.log('Requesting grid because sync-marked-numbers received before grid was loaded');
-      socket.emit('request-grid', { roomCode });
-      
-      // Set a retry mechanism for these pending numbers
-      const retryInterval = setInterval(() => {
-        if (grid && grid.length > 0) {
-          if (DEBUG) console.log('Grid now available, retrying processing of high priority queued numbers');
-          
-          // Find high priority numbers
-          const highPriorityNumbers = pendingMarkedNumbersRef.current.filter(item => item.highPriority);
-          
-          if (highPriorityNumbers.length > 0) {
-            if (DEBUG) console.log(`Processing ${highPriorityNumbers.length} high priority numbers`);
-            
-            // Remove these from the pending queue
-            pendingMarkedNumbersRef.current = pendingMarkedNumbersRef.current.filter(item => !item.highPriority);
-            
-            // Process each high priority number
-            highPriorityNumbers.forEach(pendingNumber => {
-              handleNumberMarked(pendingNumber);
-            });
-          }
-          
-          clearInterval(retryInterval);
-        }
-      }, 1000); // Check every second
-      
-      // Clear interval after 10 seconds to prevent memory leaks
-      setTimeout(() => clearInterval(retryInterval), 10000);
-      
-      return;
-    }
-    
-    if (DEBUG) console.log('Processing', markedNumbers.length, 'marked numbers from sync event');
-    
-    // Process each marked number
-    const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
-    const newMarkedCells = [...markedCells];
-    let changed = false;
-    
-    markedNumbers.forEach(number => {
-      // Find the cell index for this number
-      const numberInt = typeof number === 'string' ? parseInt(number, 10) : number;
-      let cellIndex = -1;
-      
-      for (let i = 0; i < flatGrid.length; i++) {
-        const cellNum = flatGrid[i];
-        const cellNumInt = typeof cellNum === 'string' ? parseInt(cellNum, 10) : cellNum;
-        
-        if (cellNumInt === numberInt) {
-          cellIndex = i;
-          break;
-        }
-      }
-      
-      // If found and not already marked, add to marked cells
-      if (cellIndex !== -1 && !newMarkedCells.includes(cellIndex)) {
-        if (DEBUG) console.log(`Marking cell ${cellIndex} for synced number ${numberInt}`);
-        newMarkedCells.push(cellIndex);
-        changed = true;
-      }
-    });
-    
-    // Only update state if we actually added new cells
-    if (changed) {
-      if (DEBUG) console.log('Updating marked cells from sync event');
-      setMarkedCells(newMarkedCells);
-    }
-  };
   
   return (
     <motion.div 
