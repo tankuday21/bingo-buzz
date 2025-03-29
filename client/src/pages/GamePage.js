@@ -51,6 +51,8 @@ const GamePage = () => {
   const [isMarking, setIsMarking] = useState(false);
   const isMarkingRef = useRef(isMarking); // <<< Add ref for isMarking
   const turnCheckLog = useRef(''); // Ref to store log value
+  // <<< Add ref for debounce timer >>>
+  const markNumberDebounceTimerRef = useRef(null);
   
   // Refs
   const timerIntervalRef = useRef(null);
@@ -773,40 +775,49 @@ const GamePage = () => {
     });
   };
   
-  // Handle marking a number
+  // Handle marking a number - NOW WITH DEBOUNCING
   const handleMarkNumber = useCallback((cellIndex, number) => {
-    // Log state values AT THE MOMENT this callback is invoked
-    turnCheckLog.current = `handleMarkNumber invoked. isMyTurn: ${isMyTurn}, gameStarted: ${gameStarted}, isMarkingRef.current: ${isMarkingRef.current}`;
-    console.log(turnCheckLog.current);
-
-    // <<< Use the isMarkingRef for the check >>>
-    if (!isMyTurn || !gameStarted || isMarkingRef.current) {
-      console.log('Cannot mark number:', { isMyTurn, gameStarted, isMarking: isMarkingRef.current }); // Log ref value
-      // Do not proceed if conditions aren't met
-      // If isMarking is true, it means a mark attempt is already in progress.
-      if (isMarkingRef.current) toast.error("Please wait for the previous action to complete.");
-      return;
+    // Clear any existing debounce timer
+    if (markNumberDebounceTimerRef.current) {
+      clearTimeout(markNumberDebounceTimerRef.current);
     }
-    
-    console.log(`Attempting to mark number ${number} at index ${cellIndex}`);
-    console.log(`[handleMarkNumber] PRE setIsMarking(true). Current ref value: ${isMarkingRef.current}`);
-    setIsMarking(true); // <<< Still use state setter here to trigger update & effect
-    
-    // Add specific log before emitting
-    console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
-    // Emit mark-number event to the server
-    socket.emit('mark-number', { 
-      roomCode, 
-      number, 
-      cellIndex 
-    });
 
-    // Resetting isMarking is now handled by handleNumberMarked or handleError
+    // Set a new debounce timer
+    markNumberDebounceTimerRef.current = setTimeout(() => {
+      // --- Debounced Logic Starts Here ---
+      // Log state values AT THE MOMENT this DEBOUNCED callback executes
+      turnCheckLog.current = `[Debounced] handleMarkNumber executing. isMyTurn: ${isMyTurn}, gameStarted: ${gameStarted}, isMarkingRef.current: ${isMarkingRef.current}`;
+      console.log(turnCheckLog.current);
 
-  // Update dependencies for useCallback - isMarking state is no longer directly read here
-  // but the callback should still update if gameStarted/isMyTurn changes.
-  // We depend on the isMarkingRef which updates independently.
-  }, [isMyTurn, gameStarted, roomCode]); 
+      // Perform the checks *inside* the debounced function
+      // Use the isMarkingRef for the check
+      if (!isMyTurn || !gameStarted || isMarkingRef.current) {
+        console.log('[Debounced] Cannot mark number:', { isMyTurn, gameStarted, isMarking: isMarkingRef.current }); // Log ref value
+        // If isMarking is true, it means a mark attempt is already in progress.
+        if (isMarkingRef.current) toast.error("Please wait for the previous action to complete.");
+        return; // Do not proceed
+      }
+
+      console.log(`[Debounced] Attempting to mark number ${number} at index ${cellIndex}`);
+      console.log(`[Debounced] PRE setIsMarking(true). Current ref value: ${isMarkingRef.current}`);
+      setIsMarking(true); // Lock the state
+
+      // Add specific log before emitting
+      console.log(`[Debounced] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
+      // Emit mark-number event to the server
+      socket.emit('mark-number', {
+        roomCode,
+        number,
+        cellIndex
+      });
+
+      // Resetting isMarking is handled by handleNumberMarked or handleError
+      // --- Debounced Logic Ends Here ---
+    }, 300); // Debounce timeout of 300ms
+
+  // Dependencies for the outer useCallback wrapper remain the same
+  // The inner logic accesses state/refs directly when it runs
+  }, [isMyTurn, gameStarted, roomCode]);
   
   // Add connection status indicator to UI
   const ConnectionStatus = () => (
