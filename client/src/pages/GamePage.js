@@ -393,13 +393,13 @@ const GamePage = () => {
     console.log(`[handleNumberMarked] Received marked number: ${number}. Checking grid readiness... Current isGridReadyRef.current: ${isGridReadyRef.current}`); 
 
     if (isGridReadyRef.current) {
-      // Grid is ready, process immediately using the current grid state from useState
-      console.log('[handleNumberMarked] Grid IS ready (ref check). Processing number immediately.');
-      // Pass the current grid state directly. Need to ensure processMarkedNumbers handles potential stale grid state if not using functional updates inside it.
-      // processMarkedNumbers relies on markedHistory state, which might also be stale here.
-      // Safer to update state functionally if processMarkedNumbers reads state.
-      // Let's call processMarkedNumbers directly but be mindful of its dependencies.
-       processMarkedNumbers([number], grid); // Pass the current grid state
+      // Grid is ready. Use functional setGrid to access the LATEST grid state
+      console.log('[handleNumberMarked] Grid IS ready (ref check). Using setGrid to access latest grid state for processing.');
+      setGrid(currentGrid => { 
+        // Now we are guaranteed to have the most up-to-date grid
+        processMarkedNumbers([number], currentGrid);
+        return currentGrid; // Important: return the grid state unchanged
+      });
     } else {
       // Grid is not ready, queue the number
       console.warn(`[handleNumberMarked] Grid is NOT ready (ref check) when receiving number ${number}. Queuing.`);
@@ -408,7 +408,9 @@ const GamePage = () => {
           pendingMarkedNumbersRef.current.push(number);
       }
     }
-  }, [grid]); // Add grid as dependency, ensure processMarkedNumbers is stable or included
+  // Keep grid dependency for useCallback, even though we access latest via setGrid now.
+  // This ensures the callback reference updates if grid reference changes, which is still correct.
+  }, [grid]); 
 
   // Handle receiving a full sync of marked numbers
   const handleSyncMarkedNumbers = useCallback(({ markedNumbers }) => {
@@ -416,10 +418,13 @@ const GamePage = () => {
     console.log(`[handleSyncMarkedNumbers] Received sync event with ${markedNumbers?.length} numbers. Checking grid readiness... Current isGridReadyRef.current: ${isGridReadyRef.current}`); 
     if (Array.isArray(markedNumbers)) {
         if (isGridReadyRef.current) {
-            // Grid is ready, process immediately
-            console.log('[handleSyncMarkedNumbers] Grid IS ready (ref check). Processing synced numbers.');
-            // Pass the current grid state
-            processMarkedNumbers(markedNumbers, grid);
+            // Grid is ready. Use functional setGrid to access the LATEST grid state
+            console.log('[handleSyncMarkedNumbers] Grid IS ready (ref check). Using setGrid to access latest grid state for processing.');
+            setGrid(currentGrid => {
+              // Now we are guaranteed to have the most up-to-date grid
+              processMarkedNumbers(markedNumbers, currentGrid);
+              return currentGrid; // Important: return the grid state unchanged
+            });
         } else {
             // Grid not ready, replace the queue with the synced list, ensuring no duplicates
             console.warn('[handleSyncMarkedNumbers] Grid is NOT ready (ref check). Replacing queue with synced numbers.');
@@ -428,7 +433,8 @@ const GamePage = () => {
     } else {
         console.error('[handleSyncMarkedNumbers] Received invalid markedNumbers data:', markedNumbers);
     }
-  }, [grid]); // Add grid as dependency
+  // Keep grid dependency for useCallback
+  }, [grid]); 
   
   // Fix player mapping in the waiting room section
   const normalizePlayer = (player) => {
