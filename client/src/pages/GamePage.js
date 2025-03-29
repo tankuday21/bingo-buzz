@@ -423,9 +423,12 @@ const GamePage = () => {
       // ** Call setIsMarking(false) directly AFTER the setGrid call **
       console.log('[handleNumberMarked] Attempting to set isMarking to false.');
       // Check ref value right before setting state
-      console.log(`[handleNumberMarked] isMarkingRef.current BEFORE setIsMarking(false): ${isMarkingRef.current}`);
+      console.log(`[handleNumberMarked] isMarkingRef.current BEFORE direct set & setIsMarking(false): ${isMarkingRef.current}`);
+      // --- Try direct ref update FIRST ---
+      isMarkingRef.current = false; 
+      // --- Now set state ---
       setIsMarking(false);
-      console.log('[handleNumberMarked] Successfully called setIsMarking(false).');
+      console.log(`[handleNumberMarked] Successfully called setIsMarking(false). Ref is now: ${isMarkingRef.current}`);
     } else {
       // Grid is not ready, queue the number
       console.warn(`[handleNumberMarked] Grid is NOT ready (ref check) when receiving number ${number}. Queuing.`);
@@ -437,9 +440,12 @@ const GamePage = () => {
       // Also release lock here if grid wasn't ready
       console.log('[handleNumberMarked - Grid Not Ready] Attempting to set isMarking to false.');
       // Check ref value right before setting state
-      console.log(`[handleNumberMarked - Grid Not Ready] isMarkingRef.current BEFORE setIsMarking(false): ${isMarkingRef.current}`);
+      console.log(`[handleNumberMarked - Grid Not Ready] isMarkingRef.current BEFORE direct set & setIsMarking(false): ${isMarkingRef.current}`);
+      // --- Try direct ref update FIRST ---
+      isMarkingRef.current = false; 
+      // --- Now set state ---
       setIsMarking(false);
-      console.log('[handleNumberMarked - Grid Not Ready] Successfully called setIsMarking(false).');
+      console.log(`[handleNumberMarked - Grid Not Ready] Successfully called setIsMarking(false). Ref is now: ${isMarkingRef.current}`);
     }
   // Keep grid dependency for useCallback, even though we access latest via setGrid now.
   // This ensures the callback reference updates if grid reference changes, which is still correct.
