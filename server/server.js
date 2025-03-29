@@ -290,28 +290,40 @@ app.post('/api/games', async (req, res) => {
       });
     }
     
-    // Generate a unique room code
+    // Generate a unique room code with improved validation
     let roomCode;
     let attempts = 0;
+    const MAX_ATTEMPTS = 20; // Increased from 10 to 20
     
     const generateCode = () => {
       const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-      return Array(6).fill().map(() => letters[Math.floor(Math.random() * letters.length)]).join('');
+      const code = Array(6).fill().map(() => letters[Math.floor(Math.random() * letters.length)]).join('');
+      console.log(`Generated room code: ${code}`);
+      return code;
     };
     
     do {
       roomCode = generateCode();
       attempts++;
-      if (attempts > 10) {
+      
+      // Log attempt
+      console.log(`Attempt ${attempts}/${MAX_ATTEMPTS} to generate unique room code: ${roomCode}`);
+      
+      if (attempts > MAX_ATTEMPTS) {
+        console.error(`Failed to generate unique room code after ${MAX_ATTEMPTS} attempts`);
         return res.status(500).json({ 
           error: 'Room code generation failed',
-          message: 'Could not generate a unique room code. Please try again.'
+          message: 'Could not generate a unique room code. Please try again.',
+          details: `Attempted ${MAX_ATTEMPTS} times`
         });
       }
     } while (games[roomCode]);
     
-    // Create game object
-    games[roomCode] = {
+    // Log successful room code generation
+    console.log(`Successfully generated unique room code: ${roomCode}`);
+    
+    // Create game object with additional validation
+    const game = {
       roomCode,
       gridSize,
       players: [],
@@ -331,7 +343,21 @@ app.post('/api/games', async (req, res) => {
       readyPlayers: []
     };
     
-    console.log(`New game created: ${roomCode} by ${username}, grid size: ${gridSize}`);
+    // Validate game object before storing
+    if (!game.roomCode || typeof game.roomCode !== 'string' || game.roomCode.length !== 6) {
+      console.error('Invalid room code generated:', game.roomCode);
+      return res.status(500).json({ 
+        error: 'Invalid room code',
+        message: 'Failed to create game due to invalid room code. Please try again.'
+      });
+    }
+    
+    // Store the game
+    games[roomCode] = game;
+    
+    // Log successful game creation
+    console.log(`New game created successfully: ${roomCode} by ${username}, grid size: ${gridSize}`);
+    console.log('Current active games:', Object.keys(games));
     
     // Return the room code to the client
     return res.status(201).json({ 
@@ -631,11 +657,11 @@ io.on('connection', (socket) => {
     
     try {
       // Validate input parameters
-      if (!roomCode || typeof roomCode !== 'string') {
+      if (!roomCode || typeof roomCode !== 'string' || roomCode.length !== 6) {
         console.log('Join attempt with invalid room code:', roomCode);
         socket.emit('join-error', { 
           message: 'Invalid room code',
-          details: 'Room code must be a non-empty string'
+          details: 'Room code must be a 6-letter string'
         });
         return;
       }
@@ -649,6 +675,9 @@ io.on('connection', (socket) => {
         return;
       }
       
+      // Log current active games for debugging
+      console.log('Current active games:', Object.keys(games));
+      
       // Check if room exists and clean up if expired
       const wasExpired = cleanupExpiredRoom(roomCode);
       const game = games[roomCode];
@@ -659,7 +688,18 @@ io.on('connection', (socket) => {
           message: 'Room not found',
           details: wasExpired 
             ? 'This room has expired due to inactivity. Please create a new game.'
-            : 'The room you are trying to join does not exist.'
+            : 'The room you are trying to join does not exist. Please check the room code and try again.',
+          availableRooms: Object.keys(games)
+        });
+        return;
+      }
+      
+      // Validate game object
+      if (!game.roomCode || !game.players || !game.grids) {
+        console.error(`Invalid game object for room ${roomCode}:`, game);
+        socket.emit('join-error', { 
+          message: 'Invalid game state',
+          details: 'The game room is in an invalid state. Please create a new game.'
         });
         return;
       }
