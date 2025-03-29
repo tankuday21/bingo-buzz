@@ -16,17 +16,28 @@ const app = express();
 
 // Update CORS configuration
 const corsOptions = {
-  origin: ['https://bingo-buzz.vercel.app', 'http://localhost:3000', '*'],
+  origin: ['https://bingo-buzz.vercel.app', 'http://localhost:3000'],
   methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  preflightContinue: false
 };
 
+// Apply CORS middleware
 app.use(cors(corsOptions));
 
-// Also enable CORS for preflight OPTIONS requests
+// Handle preflight requests explicitly
 app.options('*', cors(corsOptions));
+
+// Add headers middleware to ensure CORS headers are set
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'https://bingo-buzz.vercel.app');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  next();
+});
 
 app.use(express.json()); // Add JSON body parser middleware
 
@@ -35,7 +46,12 @@ const server = http.createServer(app);
 
 // Initialize Socket.io
 const io = new Server(server, {
-  cors: corsOptions,
+  cors: {
+    origin: ['https://bingo-buzz.vercel.app', 'http://localhost:3000'],
+    methods: ['GET', 'POST'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  },
   pingTimeout: 30000,
   pingInterval: 10000,
   transports: ['websocket', 'polling'],
@@ -244,21 +260,30 @@ app.post('/api/games', async (req, res) => {
     // Check if request body exists and has content
     if (!req.body || Object.keys(req.body).length === 0) {
       console.error('Game creation failed: Empty request body');
-      return res.status(400).json({ error: 'Empty request body' });
+      return res.status(400).json({ 
+        error: 'Empty request body',
+        message: 'Please provide a username and grid size'
+      });
     }
     
     const { username, gridSize = '5x5' } = req.body;
     
     if (!username) {
       console.log('Game creation failed: Username is required');
-      return res.status(400).json({ error: 'Username is required' });
+      return res.status(400).json({ 
+        error: 'Username is required',
+        message: 'Please provide a username to create a game'
+      });
     }
     
     console.log(`Creating game with username: ${username}, grid size: ${gridSize}`);
     
     // Check the total number of active games to prevent resource exhaustion
     if (Object.keys(games).length > 500) {
-      return res.status(503).json({ error: 'Server at capacity. Please try again later.' });
+      return res.status(503).json({ 
+        error: 'Server at capacity',
+        message: 'Too many active games. Please try again later.'
+      });
     }
     
     // Generate a unique room code
@@ -274,7 +299,10 @@ app.post('/api/games', async (req, res) => {
       roomCode = generateCode();
       attempts++;
       if (attempts > 10) {
-        return res.status(500).json({ error: 'Could not generate a unique room code. Please try again.' });
+        return res.status(500).json({ 
+          error: 'Room code generation failed',
+          message: 'Could not generate a unique room code. Please try again.'
+        });
       }
     } while (games[roomCode]);
     
@@ -284,28 +312,35 @@ app.post('/api/games', async (req, res) => {
       gridSize,
       players: [],
       grids: {},
-      playerNumbers: {}, // Track which numbers are assigned to which player
+      playerNumbers: {},
       started: false,
       startTime: null,
       turnIndex: 0,
-      turnDuration: 15000, // 15 seconds in milliseconds
+      turnDuration: 15000,
       markedNumbers: new Set(),
       lastMarkedNumber: undefined,
-      lastMarkedTurn: -1, // Initialize to -1 to ensure it doesn't match the first turn (0)
+      lastMarkedTurn: -1,
       createdAt: Date.now(),
       lastActive: Date.now(),
-      hostUsername: username, // Store the host username instead of socket ID
-      usedGrids: new Set(), // Add tracking for used grids
-      readyPlayers: [] // Add readyPlayers array to track who's ready
+      hostUsername: username,
+      usedGrids: new Set(),
+      readyPlayers: []
     };
     
     console.log(`New game created: ${roomCode} by ${username}, grid size: ${gridSize}`);
     
     // Return the room code to the client
-    return res.status(201).json({ roomCode });
+    return res.status(201).json({ 
+      roomCode,
+      message: 'Game created successfully'
+    });
   } catch (error) {
     console.error('Error in game creation API:', error);
-    return res.status(500).json({ error: 'Failed to create game: ' + error.message });
+    return res.status(500).json({ 
+      error: 'Server error',
+      message: 'Failed to create game. Please try again.',
+      details: error.message
+    });
   }
 });
 
@@ -421,7 +456,8 @@ io.on('connection', (socket) => {
   const socketInfo = { 
     connectedAt: Date.now(),
     rooms: new Set(),
-    lastActivity: Date.now()
+    lastActivity: Date.now(),
+    reconnectAttempts: 0
   };
   
   activeConnections.set(socket.id, socketInfo);
@@ -438,6 +474,32 @@ io.on('connection', (socket) => {
   // Apply activity tracking to all events
   socket.onAny(updateActivity);
 
+  // Handle connection errors
+  socket.on('connect_error', (error) => {
+    console.error(`Connection error for socket ${socket.id}:`, error);
+    const info = activeConnections.get(socket.id);
+    if (info) {
+      info.reconnectAttempts++;
+      activeConnections.set(socket.id, info);
+    }
+  });
+
+  // Handle reconnection attempts
+  socket.on('reconnect_attempt', (attemptNumber) => {
+    console.log(`Socket ${socket.id} attempting to reconnect (attempt ${attemptNumber})`);
+  });
+
+  // Handle successful reconnection
+  socket.on('reconnect', (attemptNumber) => {
+    console.log(`Socket ${socket.id} reconnected successfully after ${attemptNumber} attempts`);
+    const info = activeConnections.get(socket.id);
+    if (info) {
+      info.reconnectAttempts = 0;
+      info.lastActivity = Date.now();
+      activeConnections.set(socket.id, info);
+    }
+  });
+
   // Handle ping from client
   socket.on('ping', () => {
     const connection = activeConnections.get(socket.id);
@@ -448,7 +510,7 @@ io.on('connection', (socket) => {
     socket.emit('pong');
   });
 
-  // Handle disconnection
+  // Handle disconnection with improved error handling
   socket.on('disconnect', (reason) => {
     console.log('Client disconnected:', socket.id, 'Reason:', reason);
     
