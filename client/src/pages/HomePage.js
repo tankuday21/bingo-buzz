@@ -38,18 +38,22 @@ const HomePage = () => {
       console.log('Sending request to:', '/api/games');
       console.log('Request payload:', { username, gridSize });
       
-      // Use environment variable for API URL, ensure no double slashes
-      const baseUrl = process.env.REACT_APP_SERVER_URL?.replace(/\/$/, '');
-      const apiUrl = `${baseUrl}/api/games`;
-      console.log('Using API URL:', apiUrl);
+      // Get server URL from environment variable
+      const baseUrl = process.env.REACT_APP_SERVER_URL;
+      if (!baseUrl) {
+        throw new Error('Server URL not configured. Please set REACT_APP_SERVER_URL in .env');
+      }
       
-      const response = await axios.post(apiUrl, { 
+      console.log('Using API URL:', baseUrl);
+      
+      const response = await axios.post(`${baseUrl}/api/games`, { 
         username, 
         gridSize 
       }, {
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        withCredentials: true
       });
       
       console.log('Create room response:', response.data);
@@ -88,7 +92,7 @@ const HomePage = () => {
       
     } catch (error) {
       console.error('Error creating game:', error);
-      toast.error(error.response?.data?.error || 'Failed to create game');
+      toast.error(error.response?.data?.error || error.message || 'Failed to create game');
       setIsCreating(false);
     }
   };
