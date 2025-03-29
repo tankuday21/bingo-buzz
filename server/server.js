@@ -164,24 +164,34 @@ const MONGO_RETRY_DELAY = 5000; // 5 seconds
 
 async function connectToMongoDB() {
   try {
+    // Skip MongoDB connection if no URI is provided
+    if (!process.env.MONGODB_URI) {
+      console.log('No MongoDB URI provided, running without database');
+      mongoConnected = false;
+      return;
+    }
+
+    // Validate MongoDB URI format
+    if (!process.env.MONGODB_URI.startsWith('mongodb://') && !process.env.MONGODB_URI.startsWith('mongodb+srv://')) {
+      console.error('Invalid MongoDB URI format. Running without database.');
+      mongoConnected = false;
+      return;
+    }
+
     if (mongoose.connection.readyState === 1) {
       console.log('Already connected to MongoDB');
       mongoConnected = true;
       return;
     }
 
-    // Handle connection inside a try/catch to prevent crashing the entire server
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/bingo-buzz', {
+    await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
       retryWrites: true,
       connectTimeoutMS: 30000,
-      // Disable buffering to prevent memory issues
       bufferCommands: false,
-    }).catch(err => {
-      throw err;  // Re-throw to be caught by the outer catch
     });
     
     console.log('Connected to MongoDB');
@@ -197,9 +207,7 @@ async function connectToMongoDB() {
       setTimeout(connectToMongoDB, MONGO_RETRY_DELAY * mongoRetryCount);
     } else {
       console.error('Max MongoDB retry attempts reached. Continuing without MongoDB - leaderboard functionality will be limited');
-      // Ensure the app continues to function without MongoDB
       mongoConnected = false;
-      // Emit a server-wide event to notify about MongoDB status
       io && io.emit && io.emit('mongodb-status', { connected: false });
     }
   }
@@ -697,11 +705,30 @@ io.on('connection', (socket) => {
       // Validate game object
       if (!game.roomCode || !game.players || !game.grids) {
         console.error(`Invalid game object for room ${roomCode}:`, game);
-        socket.emit('join-error', { 
-          message: 'Invalid game state',
-          details: 'The game room is in an invalid state. Please create a new game.'
-        });
-        return;
+        // Try to recover the game object
+        const recoveredGame = {
+          roomCode,
+          gridSize: game.gridSize || '5x5',
+          players: [],
+          grids: {},
+          playerNumbers: {},
+          started: false,
+          startTime: null,
+          turnIndex: 0,
+          turnDuration: 15000,
+          markedNumbers: new Set(),
+          lastMarkedNumber: undefined,
+          lastMarkedTurn: -1,
+          createdAt: Date.now(),
+          lastActive: Date.now(),
+          hostUsername: game.hostUsername || username,
+          usedGrids: new Set(),
+          readyPlayers: []
+        };
+        
+        // Replace the invalid game with the recovered one
+        games[roomCode] = recoveredGame;
+        console.log(`Recovered game object for room ${roomCode}`);
       }
       
       // Update game activity
@@ -1146,46 +1173,16 @@ io.on('connection', (socket) => {
     }
     
     // Check if player exists in game
-      const player = game.players.find(p => p.id === socket.id);
-      if (!player) {
+    const player = game.players.find(p => p.id === socket.id);
+    if (!player) {
       console.log(`Player ${socket.id} not found in game ${roomCode}, cannot send grid`);
-        return socket.emit('error', 'Player not found in game');
-      }
-      
-    // Get this player's grid
-    const playerGrid = game.grids[socket.id];
+      return socket.emit('error', 'Player not found in game');
+    }
     
-    if (playerGrid) {
-      console.log(`Sending requested grid to player ${socket.id} (${player.username}):`, JSON.stringify(playerGrid));
-      
-      // Emit grid first, and don't send marked numbers immediately
-      socket.emit('grid-assigned', playerGrid);
-      
-      // Wait for client to acknowledge grid reception before sending marked numbers
-      setTimeout(() => {
-        if (game.started) {
-          // Send information about current turn
-          const currentTurnPlayer = game.players.find(p => p.id === game.currentTurn);
-          socket.emit('turn-changed', {
-            currentTurn: game.currentTurn,
-            player: currentTurnPlayer
-          });
-          
-          // Send marked numbers separately after a delay
-          setTimeout(() => {
-            if (game.markedNumbers && game.markedNumbers.size > 0) {
-              console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id} after grid acknowledged`);
-              
-              // Convert Set to Array for sending
-              const markedNumbersArray = Array.from(game.markedNumbers);
-              socket.emit('sync-marked-numbers', {
-                markedNumbers: markedNumbersArray
-              });
-            }
-          }, 1000); // Wait 1 second after turn info to send marked numbers
-        }
-      }, 500); // Wait 500ms after grid to send turn info
-    } else {
+    // Get this player's grid
+    let playerGrid = game.grids[socket.id];
+    
+    if (!playerGrid) {
       console.log(`No grid found for player ${socket.id} (${player.username}), generating new grid`);
       
       // Generate a new grid for this player
@@ -1202,7 +1199,7 @@ io.on('connection', (socket) => {
       }
       
       // Create the grid
-      const newGrid = [];
+      playerGrid = [];
       for (let i = 0; i < rows; i++) {
         const row = [];
         for (let j = 0; j < cols; j++) {
@@ -1211,30 +1208,43 @@ io.on('connection', (socket) => {
             row.push(allNumbers[index]);
           }
         }
-        newGrid.push(row);
+        playerGrid.push(row);
       }
       
       // Save the grid
-      game.grids[socket.id] = newGrid;
-      
-      // Send the grid to the player first
-      console.log(`Sending new grid to player ${socket.id} (${player.username}):`, JSON.stringify(newGrid));
-      socket.emit('grid-assigned', newGrid);
-      
-      // Wait for client to acknowledge grid reception before sending marked numbers
-      setTimeout(() => {
-        // Also send marked numbers if game has started
-        if (game.started && game.markedNumbers && game.markedNumbers.size > 0) {
-          console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id} after grid reception`);
-          
-          // Convert Set to Array for sending
-          const markedNumbersArray = Array.from(game.markedNumbers);
-          socket.emit('sync-marked-numbers', {
-            markedNumbers: markedNumbersArray
-          });
-        }
-      }, 1000); // Wait 1 second before sending marked numbers
+      game.grids[socket.id] = playerGrid;
     }
+    
+    // Send the grid to the player first
+    console.log(`Sending grid to player ${socket.id} (${player.username}):`, JSON.stringify(playerGrid));
+    socket.emit('grid-assigned', playerGrid);
+    
+    // Wait for client to acknowledge grid reception before sending marked numbers
+    const sendMarkedNumbers = () => {
+      if (game.started && game.markedNumbers && game.markedNumbers.size > 0) {
+        console.log(`Sending ${game.markedNumbers.size} marked numbers to player ${socket.id} after grid reception`);
+        const markedNumbersArray = Array.from(game.markedNumbers);
+        socket.emit('sync-marked-numbers', {
+          markedNumbers: markedNumbersArray
+        });
+      }
+    };
+    
+    // Set up a one-time listener for grid-ready acknowledgment
+    const gridReadyHandler = () => {
+      console.log(`Player ${socket.id} acknowledged grid reception`);
+      sendMarkedNumbers();
+      socket.off('grid-ready', gridReadyHandler);
+    };
+    
+    socket.on('grid-ready', gridReadyHandler);
+    
+    // Set a timeout to send marked numbers even if grid-ready is not received
+    setTimeout(() => {
+      console.log(`Timeout reached for player ${socket.id}, sending marked numbers anyway`);
+      sendMarkedNumbers();
+      socket.off('grid-ready', gridReadyHandler);
+    }, 5000); // 5 second timeout
   });
 
   // Handle player ready state toggling
@@ -1550,7 +1560,7 @@ function nextTurn(roomCode) {
 async function updateLeaderboard(player, score) {
   try {
     if (!mongoConnected) {
-      console.log('Skipping leaderboard update due to MongoDB connection issue');
+      console.log('Leaderboard updates disabled - MongoDB not connected');
       return;
     }
     
@@ -1558,13 +1568,11 @@ async function updateLeaderboard(player, score) {
     let leaderboardEntry = await LeaderboardModel.findOne({ username: player.username });
     
     if (leaderboardEntry) {
-      // Update existing entry
       leaderboardEntry.gamesPlayed += 1;
       leaderboardEntry.gamesWon += 1;
       leaderboardEntry.totalScore += score;
       leaderboardEntry.highScore = Math.max(leaderboardEntry.highScore, score);
     } else {
-      // Create new entry
       leaderboardEntry = new LeaderboardModel({
         username: player.username,
         gamesPlayed: 1,
@@ -1574,10 +1582,10 @@ async function updateLeaderboard(player, score) {
       });
     }
     
-    // Save the entry
     await leaderboardEntry.save();
   } catch (error) {
     console.error('Error updating leaderboard:', error);
+    // Don't throw the error, just log it
   }
 }
 
