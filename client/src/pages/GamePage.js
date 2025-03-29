@@ -408,9 +408,13 @@ const GamePage = () => {
       setGrid(currentGrid => { 
         // Now we are guaranteed to have the most up-to-date grid
         processMarkedNumbers([number], currentGrid);
-        setIsMarking(false); // <<< Release the lock AFTER successful processing
+        // setIsMarking(false); // <<< REMOVE from here
         return currentGrid; // Important: return the grid state unchanged
       });
+      // ** Call setIsMarking(false) directly AFTER the setGrid call **
+      console.log('[handleNumberMarked] Attempting to set isMarking to false.');
+      setIsMarking(false); 
+      console.log('[handleNumberMarked] Successfully called setIsMarking(false).');
     } else {
       // Grid is not ready, queue the number
       console.warn(`[handleNumberMarked] Grid is NOT ready (ref check) when receiving number ${number}. Queuing.`);
@@ -419,7 +423,10 @@ const GamePage = () => {
           pendingMarkedNumbersRef.current.push(number);
       }
        // Even if queued, we should probably release the lock as the server won't confirm this specific action now.
-      setIsMarking(false); // <<< Release lock if grid wasn't ready during processing
+      // Also release lock here if grid wasn't ready
+      console.log('[handleNumberMarked - Grid Not Ready] Attempting to set isMarking to false.');
+      setIsMarking(false); 
+      console.log('[handleNumberMarked - Grid Not Ready] Successfully called setIsMarking(false).');
     }
   // Keep grid dependency for useCallback, even though we access latest via setGrid now.
   // This ensures the callback reference updates if grid reference changes, which is still correct.
