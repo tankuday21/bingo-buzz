@@ -1372,8 +1372,19 @@ io.on('connection', (socket) => {
         game.timer = null;
       }
       
-      // Notify all players
-      io.to(roomCode).emit('number-marked', {
+      // ** Explicitly confirm to the sender first **
+      console.log(`[mark-number] Emitting direct confirmation to sender ${socket.id} for number ${number}`);
+      socket.emit('number-marked', {
+        number: number,
+        markedBy: socket.id,
+        player: player, 
+        automatic: false
+      });
+      
+      // Notify OTHER players in the room
+      // Using socket.broadcast.to sends to everyone in the room EXCEPT the sender
+      console.log(`[mark-number] Broadcasting to room ${roomCode} (excluding sender) for number ${number}`);
+      socket.broadcast.to(roomCode).emit('number-marked', {
         number: number,
         markedBy: socket.id,
         player: player,
