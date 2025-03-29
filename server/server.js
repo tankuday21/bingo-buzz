@@ -1011,7 +1011,7 @@ io.on('connection', (socket) => {
   // Handle player joining a room
   socket.on('join-room', ({ roomCode, username }) => {
     console.log(`Player ${username} (${socket.id}) attempting to join room ${roomCode}`);
-    
+
     try {
       // Validate input parameters
       if (!roomCode || typeof roomCode !== 'string' || roomCode.length !== 6) {
@@ -1036,27 +1036,37 @@ io.on('connection', (socket) => {
       socket.data.roomCode = roomCode;
       socket.data.username = username;
       
-      // Log current active games for debugging
-      console.log('Current active games:', Object.keys(games));
+      // Log current state BEFORE checking/recovery
+      console.log(`[Join Attempt - ${roomCode}] Current state of games object keys: ${Object.keys(games).join(', ')}`);
+      const gameExistsInMemory = !!games[roomCode];
+      console.log(`[Join Attempt - ${roomCode}] Game exists in memory before check: ${gameExistsInMemory}`);
+      if (gameExistsInMemory) {
+        // Avoid logging potentially huge grid data, just log essential parts
+        const gameSummary = { ...games[roomCode], grids: `Grids exist for ${Object.keys(games[roomCode].grids || {}).length} players`, markedNumbers: `Marked: ${(games[roomCode].markedNumbers || new Set()).size}`, usedGrids: `Used: ${(games[roomCode].usedGrids || new Set()).size}` };
+        console.log(`[Join Attempt - ${roomCode}] Game data summary in memory: ${JSON.stringify(gameSummary)}`);
+      }
       
       // Check if room exists and clean up if expired
       const wasExpired = cleanupExpiredRoom(roomCode);
       let game = games[roomCode];
       
-      // If room not found, try to recover it
+      // If room not found in memory, try to recover it
       if (!game) {
-        console.log(`Room ${roomCode} not found, attempting recovery...`);
+        console.log(`[Join Attempt - ${roomCode}] Room not found in memory. Attempting recovery...`);
         if (recoverRoomState(roomCode)) {
-          game = games[roomCode];
-          console.log(`Successfully recovered room ${roomCode}`);
+          game = games[roomCode]; // Re-assign game after successful recovery
+          console.log(`[Join Attempt - ${roomCode}] Successfully recovered room.`);
+          // Log summary after recovery
+          const recoveredGameSummary = { ...game, grids: `Grids exist for ${Object.keys(game.grids || {}).length} players`, markedNumbers: `Marked: ${(game.markedNumbers || new Set()).size}`, usedGrids: `Used: ${(game.usedGrids || new Set()).size}` };
+          console.log(`[Join Attempt - ${roomCode}] Game data summary after recovery: ${JSON.stringify(recoveredGameSummary)}`);
         } else {
-          console.log(`Room ${roomCode} could not be recovered`);
-          socket.emit('join-error', { 
+          console.log(`[Join Attempt - ${roomCode}] Room could not be recovered.`);
+          socket.emit('join-error', {
             message: 'Room not found',
-            details: wasExpired 
+            details: wasExpired
               ? 'This room has expired due to inactivity. Please create a new game.'
-              : 'The room you are trying to join does not exist. Please check the room code and try again.',
-            availableRooms: Object.keys(games)
+              : 'The room you are trying to join does not exist or could not be recovered. Please check the room code and try again.',
+            availableRooms: Object.keys(games) // Log available rooms to help debug
           });
           return;
         }
@@ -1064,47 +1074,18 @@ io.on('connection', (socket) => {
       
       // Validate and repair room state if necessary
       if (!validateRoomState(roomCode)) {
-        console.log(`Room state invalid for ${roomCode}, attempting repair...`);
+        console.log(`[Join Attempt - ${roomCode}] Room state invalid, attempting repair...`);
         if (repairRoomState(game)) {
-          game = games[roomCode];
-          console.log(`Successfully repaired room state for ${roomCode}`);
+          game = games[roomCode]; // Re-assign game after successful repair
+          console.log(`[Join Attempt - ${roomCode}] Successfully repaired room state.`);
         } else {
-          console.error(`Failed to repair room state for ${roomCode}`);
+          console.error(`[Join Attempt - ${roomCode}] Failed to repair room state.`);
           socket.emit('join-error', {
             message: 'Room state corrupted',
             details: 'The room state is corrupted and cannot be repaired. Please create a new game.'
           });
           return;
         }
-      }
-      
-      // Validate game object
-      if (!game.roomCode || !game.players || !game.grids) {
-        console.error(`Invalid game object for room ${roomCode}:`, game);
-        // Try to recover the game object
-        const recoveredGame = {
-          roomCode,
-          gridSize: game.gridSize || '5x5',
-          players: [],
-          grids: {},
-          playerNumbers: {},
-          started: false,
-          startTime: null,
-          turnIndex: 0,
-          turnDuration: 15000,
-          markedNumbers: new Set(),
-          lastMarkedNumber: undefined,
-          lastMarkedTurn: -1,
-          createdAt: Date.now(),
-          lastActive: Date.now(),
-          hostUsername: game.hostUsername || username,
-          usedGrids: new Set(),
-          readyPlayers: []
-        };
-        
-        // Replace the invalid game with the recovered one
-        games[roomCode] = recoveredGame;
-        console.log(`Recovered game object for room ${roomCode}`);
       }
       
       // Update game activity
@@ -1114,7 +1095,7 @@ io.on('connection', (socket) => {
       socket.data.roomCode = roomCode;
       
       if (game.started) {
-        console.log(`Rejected join: Game already in progress, room: ${roomCode}`);
+        console.log(`[Join Attempt - ${roomCode}] Rejected join: Game already in progress`);
         socket.emit('join-error', { 
           message: 'Game already in progress',
           details: 'This game has already started. Please create a new game or join a different room.'
@@ -1129,7 +1110,7 @@ io.on('connection', (socket) => {
       if (existingPlayerIndex !== -1) {
         // Update the existing player's socket ID
         const existingPlayer = game.players[existingPlayerIndex];
-        console.log(`Player ${username} rejoining. Old ID: ${existingPlayer.id}, New ID: ${socket.id}`);
+        console.log(`[Join Attempt - ${roomCode}] Player ${username} rejoining. Old ID: ${existingPlayer.id}, New ID: ${socket.id}`);
         
         // Update the socket ID
         existingPlayer.id = socket.id;
@@ -1144,6 +1125,7 @@ io.on('connection', (socket) => {
         }
       } else {
         // Generate a new grid for new player
+        console.log(`[Join Attempt - ${roomCode}] Generating new grid for player ${username}`);
         playerGrid = generateUniquePlayerGrid(game.gridSize, username, game.usedGrids || new Set());
         game.grids[socket.id] = playerGrid;
         
@@ -1158,8 +1140,8 @@ io.on('connection', (socket) => {
       // Join the socket room
       socket.join(roomCode);
       
-      // Log the grid being sent
-      console.log(`Sending grid to player ${username} (${socket.id}):`, JSON.stringify(playerGrid));
+      // Log the grid being sent (summary)
+      console.log(`[Join Attempt - ${roomCode}] Sending grid summary to player ${username} (${socket.id}): ${playerGrid.length}x${playerGrid[0]?.length}`);
       
       // Extract usernames for readyPlayers to ensure consistent data structure
       const readyPlayerUsernames = (game.readyPlayers || []).map(player => 
@@ -1168,7 +1150,7 @@ io.on('connection', (socket) => {
       
       // Determine if this player is the host (by username, not socket ID)
       const isHost = username === game.hostUsername;
-      console.log(`Checking if ${username} is host. Game host username: ${game.hostUsername}, Result: ${isHost}`);
+      console.log(`[Join Attempt - ${roomCode}] Checking if ${username} is host. Game host: ${game.hostUsername}, Result: ${isHost}`);
       
       // Emit success event with game state
       socket.emit('joined-room', {
@@ -1195,9 +1177,9 @@ io.on('connection', (socket) => {
       });
       
     } catch (error) {
-      console.error('Error in join-room handler:', error);
+      console.error(`[Join Error - ${roomCode}] Error in join-room handler for user ${username}:`, error);
       socket.emit('join-error', { 
-        message: 'Failed to join room',
+        message: 'Failed to join room due to server error',
         details: error.message
       });
     }
