@@ -109,30 +109,40 @@ const HomePage = () => {
       return;
     }
     
-    try {
-      setIsJoining(true);
-      // Use environment variable for API URL, ensure no double slashes
-      const baseUrl = process.env.REACT_APP_SERVER_URL?.replace(/\/$/, '');
-      const apiUrl = `${baseUrl}/api/join-room`;
-      console.log('Using API URL for joining:', apiUrl);
-      
-      await axios.post(apiUrl, { roomCode });
-      
-      // Save username and navigate to game page
-      saveUsername(username);
-      navigate(`/game/${roomCode}`);
-    } catch (error) {
-      console.error('Error joining game:', error);
-      
-      if (error.response && error.response.status === 404) {
-        toast.error('Room not found. Please check the code and try again.');
-      } else if (error.response && error.response.status === 400) {
-        toast.error('Game already in progress. Cannot join now.');
-      } else {
-        toast.error('Failed to join game. Please try again.');
+    console.log(`Attempting to join room ${roomCode} as ${username}`);
+    
+    // Use Socket.IO to join the room, not an API call
+    if (socket && socket.connected) {
+      console.log(`Emitting join-room event via socket:`, { roomCode, username });
+      socket.emit('join-room', { roomCode, username });
+
+      // Set up a listener for join success/error *before* navigating
+      // Add listeners only once to avoid duplication
+      if (!socket.hasListeners('joined-room')) {
+        socket.on('joined-room', (data) => {
+          console.log('Successfully joined room via socket:', data);
+          // Navigate immediately upon successful socket join
+          navigate(`/game/${roomCode}`, { state: { username, roomCode } });
+        });
       }
-    } finally {
-      setIsJoining(false);
+      
+      if (!socket.hasListeners('join-error')) {
+        socket.on('join-error', (error) => {
+          console.error('Error joining room via socket:', error);
+          toast.error(`Error joining room: ${error.message}. ${error.details || ''}`);
+          // Clear listeners on error to prevent lingering handlers
+          socket.off('joined-room');
+          socket.off('join-error');
+        });
+      }
+
+      // Optional: Add a timeout in case the server doesn't respond
+      // If you need a timeout, consider implementing it carefully
+      // to avoid navigating prematurely or interfering with error handling.
+      
+    } else {
+      console.error('Socket not connected. Cannot join room.');
+      toast.error('Connection error. Please check your connection and refresh.');
     }
   };
   

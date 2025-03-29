@@ -1022,7 +1022,7 @@ io.on('connection', (socket) => {
         });
         return;
       }
-
+      
       if (!username || typeof username !== 'string') {
         console.log('Join attempt with invalid username:', username);
         socket.emit('join-error', { 
@@ -1068,7 +1068,7 @@ io.on('connection', (socket) => {
               : 'The room you are trying to join does not exist or could not be recovered. Please check the room code and try again.',
             availableRooms: Object.keys(games) // Log available rooms to help debug
           });
-          return;
+        return;
         }
       }
       
@@ -1531,12 +1531,12 @@ io.on('connection', (socket) => {
     }
     
     // Check if player exists in game
-    const player = game.players.find(p => p.id === socket.id);
-    if (!player) {
+      const player = game.players.find(p => p.id === socket.id);
+      if (!player) {
       console.log(`Player ${socket.id} not found in game ${roomCode}, cannot send grid`);
-      return socket.emit('error', 'Player not found in game');
-    }
-    
+        return socket.emit('error', 'Player not found in game');
+      }
+      
     // Get this player's grid
     let playerGrid = game.grids[socket.id];
     
