@@ -465,10 +465,6 @@ function cleanupExpiredRoom(roomCode) {
 }
 
 // Add persistent storage for games
-const fs = require('fs');
-const path = require('path');
-
-// Define storage paths
 const STORAGE_DIR = path.join(__dirname, 'storage');
 const GAMES_FILE = path.join(STORAGE_DIR, 'games.json');
 
