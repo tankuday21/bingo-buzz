@@ -39,7 +39,7 @@ const HomePage = () => {
       console.log('Request payload:', { username, gridSize });
       
       // Get server URL from environment variable
-      const baseUrl = process.env.REACT_APP_SERVER_URL;
+      const baseUrl = process.env.REACT_APP_SERVER_URL?.replace(/\/+$/, ''); // Remove trailing slashes
       if (!baseUrl) {
         throw new Error('Server URL not configured. Please set REACT_APP_SERVER_URL in .env');
       }

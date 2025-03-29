@@ -23,7 +23,11 @@ const app = express();
 
 // Update CORS configuration
 app.use(cors({
-  origin: ['https://bingo-buzz.vercel.app', 'http://localhost:3000'],
+  origin: [
+    'https://bingo-buzz.vercel.app',
+    'http://localhost:3000',
+    'https://bingo-buzz.up.railway.app'
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
@@ -35,7 +39,10 @@ app.options('*', cors());
 
 // Add headers middleware to ensure CORS headers are set
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://bingo-buzz.vercel.app');
+  const origin = req.headers.origin;
+  if (['https://bingo-buzz.vercel.app', 'http://localhost:3000', 'https://bingo-buzz.up.railway.app'].includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.header('Access-Control-Allow-Credentials', 'true');
