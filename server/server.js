@@ -9,6 +9,7 @@ const LeaderboardModel = require('./models/leaderboard');
 const gameUtils = require('./utils/gameUtils');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 
 // Destructure the imported functions
 const { generateGrid, generateUniqueGrid, getUnmarkedNumbers, generateUniquePlayerGrid } = gameUtils;
@@ -21,20 +22,16 @@ dotenv.config();
 const app = express();
 
 // Update CORS configuration
-const corsOptions = {
+app.use(cors({
   origin: ['https://bingo-buzz.vercel.app', 'http://localhost:3000'],
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
-  optionsSuccessStatus: 200,
-  preflightContinue: false
-};
+  maxAge: 86400 // 24 hours
+}));
 
-// Apply CORS middleware
-app.use(cors(corsOptions));
-
-// Handle preflight requests explicitly
-app.options('*', cors(corsOptions));
+// Add preflight handler for all routes
+app.options('*', cors());
 
 // Add headers middleware to ensure CORS headers are set
 app.use((req, res, next) => {
@@ -56,17 +53,13 @@ const io = new Server(server, {
     origin: ['https://bingo-buzz.vercel.app', 'http://localhost:3000'],
     methods: ['GET', 'POST'],
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization']
   },
-  pingTimeout: 30000,
-  pingInterval: 10000,
+  path: '/socket.io/',
   transports: ['websocket', 'polling'],
-  maxHttpBufferSize: 1e6,
-  perMessageDeflate: {
-    threshold: 1024
-  },
-  connectTimeout: 45000,
-  path: '/socket.io/'
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  connectTimeout: 45000
 });
 
 // Add game cleanup mechanism
@@ -266,76 +259,52 @@ app.use((req, res, next) => {
   next();
 });
 
-// Fix API endpoints
+// API Routes
 app.post('/api/games', async (req, res) => {
   try {
     console.log('Received game creation request:', req.body);
-    
-    // Check if request body exists and has content
-    if (!req.body || Object.keys(req.body).length === 0) {
-      console.error('Game creation failed: Empty request body');
-      return res.status(400).json({ 
-        error: 'Empty request body',
-        message: 'Please provide a username and grid size'
-      });
-    }
-    
-    const { username, gridSize = '5x5' } = req.body;
+    const { username, gridSize } = req.body;
     
     if (!username) {
-      console.log('Game creation failed: Username is required');
       return res.status(400).json({ 
         error: 'Username is required',
-        message: 'Please provide a username to create a game'
+        details: 'Please provide a username when creating a game'
       });
     }
     
-    console.log(`Creating game with username: ${username}, grid size: ${gridSize}`);
-    
-    // Check the total number of active games to prevent resource exhaustion
-    if (Object.keys(games).length > 500) {
+    // Check total number of active games
+    const activeGames = Object.keys(games).length;
+    if (activeGames >= 100) {
       return res.status(503).json({ 
-        error: 'Server at capacity',
-        message: 'Too many active games. Please try again later.'
+        error: 'Service temporarily unavailable',
+        details: 'Maximum number of active games reached. Please try again later.'
       });
     }
     
-    // Generate a unique room code with improved validation
+    // Generate unique room code
     let roomCode;
     let attempts = 0;
-    const MAX_ATTEMPTS = 20; // Increased from 10 to 20
-    
-    const generateCode = () => {
-      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-      const code = Array(6).fill().map(() => letters[Math.floor(Math.random() * letters.length)]).join('');
-      console.log(`Generated room code: ${code}`);
-      return code;
-    };
+    const maxAttempts = 10;
     
     do {
-      roomCode = generateCode();
+      roomCode = generateRoomCode();
       attempts++;
-      
-      // Log attempt
-      console.log(`Attempt ${attempts}/${MAX_ATTEMPTS} to generate unique room code: ${roomCode}`);
-      
-      if (attempts > MAX_ATTEMPTS) {
-        console.error(`Failed to generate unique room code after ${MAX_ATTEMPTS} attempts`);
-        return res.status(500).json({ 
-          error: 'Room code generation failed',
-          message: 'Could not generate a unique room code. Please try again.',
-          details: `Attempted ${MAX_ATTEMPTS} times`
-        });
-      }
-    } while (games[roomCode]);
+      console.log(`Attempt ${attempts}/${maxAttempts} to generate unique room code: ${roomCode}`);
+    } while (games[roomCode] && attempts < maxAttempts);
     
-    // Log successful room code generation
-    console.log(`Successfully generated unique room code: ${roomCode}`);
+    if (attempts >= maxAttempts) {
+      return res.status(503).json({ 
+        error: 'Service temporarily unavailable',
+        details: 'Unable to generate unique room code. Please try again.'
+      });
+    }
     
-    // Create game object with additional validation
+    console.log('Successfully generated unique room code:', roomCode);
+    
+    // Create new game
     const game = {
       roomCode,
-      gridSize,
+      gridSize: gridSize || '5x5',
       players: [],
       grids: {},
       playerNumbers: {},
@@ -353,52 +322,43 @@ app.post('/api/games', async (req, res) => {
       readyPlayers: []
     };
     
-    // Validate game object before storing
-    if (!game.roomCode || typeof game.roomCode !== 'string' || game.roomCode.length !== 6) {
-      console.error('Invalid room code generated:', game.roomCode);
-      return res.status(500).json({ 
-        error: 'Invalid room code',
-        message: 'Failed to create game due to invalid room code. Please try again.'
-      });
-    }
-    
-    // Store the game
     games[roomCode] = game;
-    
-    // Log successful game creation
-    console.log(`New game created successfully: ${roomCode} by ${username}, grid size: ${gridSize}`);
+    console.log('New game created successfully:', roomCode, 'by', username, 'grid size:', gridSize);
     console.log('Current active games:', Object.keys(games));
     
-    // Return the room code to the client
-    return res.status(201).json({ 
+    // Save game state
+    saveGames();
+    
+    res.status(201).json({ 
       roomCode,
-      message: 'Game created successfully'
+      message: 'Game created successfully',
+      details: {
+        host: username,
+        gridSize: game.gridSize,
+        createdAt: game.createdAt
+      }
     });
   } catch (error) {
-    console.error('Error in game creation API:', error);
-    return res.status(500).json({ 
-      error: 'Server error',
-      message: 'Failed to create game. Please try again.',
+    console.error('Error creating game:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
       details: error.message
     });
   }
 });
 
-// Add a compatibility endpoint for the original /api/create-game path
+// Compatibility endpoint for original path
 app.post('/api/create-game', async (req, res) => {
-  // Simply forward to the main endpoint
   try {
-    const result = await new Promise((resolve, reject) => {
-      app._router.handle(
-        { ...req, url: '/api/games', path: '/api/games' },
-        { ...res, send: resolve },
-        reject
-      );
-    });
-    return result;
+    console.log('Received request to /api/create-game, forwarding to /api/games');
+    const response = await axios.post('http://localhost:5000/api/games', req.body);
+    res.status(response.status).json(response.data);
   } catch (error) {
-    console.error('Error forwarding to /api/games:', error);
-    return res.status(500).json({ error: 'Server error' });
+    console.error('Error in /api/create-game:', error);
+    res.status(error.response?.status || 500).json({
+      error: 'Failed to create game',
+      details: error.message
+    });
   }
 });
 
@@ -1508,8 +1468,8 @@ io.on('connection', (socket) => {
               score
             });
             
-            // Don't go to next turn if we have a winner
-            return;
+            // End the game
+            game.started = false;
           }
         }
       }
