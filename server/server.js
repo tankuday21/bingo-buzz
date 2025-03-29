@@ -758,64 +758,89 @@ function validateRoomState(roomCode) {
 }
 
 // Add room state repair function
-function repairRoomState(roomCode) {
-  console.log(`Attempting to repair room state for ${roomCode}`);
-  const game = games[roomCode];
-  if (!game) return false;
-  
+function repairRoomState(game) {
   try {
-    // Ensure all required properties exist with default values
-    const defaultState = {
-      roomCode,
-      gridSize: game.gridSize || '5x5',
-      players: Array.isArray(game.players) ? game.players : [],
-      grids: typeof game.grids === 'object' ? game.grids : {},
-      playerNumbers: typeof game.playerNumbers === 'object' ? game.playerNumbers : {},
-      started: Boolean(game.started),
-      startTime: game.startTime || null,
-      turnIndex: Number(game.turnIndex) || 0,
-      turnDuration: Number(game.turnDuration) || 15000,
-      markedNumbers: game.markedNumbers instanceof Set ? game.markedNumbers : new Set(),
-      lastMarkedNumber: game.lastMarkedNumber,
-      lastMarkedTurn: Number(game.lastMarkedTurn) || -1,
-      createdAt: Number(game.createdAt) || Date.now(),
-      lastActive: Number(game.lastActive) || Date.now(),
-      hostUsername: game.hostUsername || game.players[0]?.username || null,
-      usedGrids: game.usedGrids instanceof Set ? game.usedGrids : new Set(),
-      readyPlayers: Array.isArray(game.readyPlayers) ? game.readyPlayers : []
-    };
+    console.log('Attempting to repair room state for', game.roomCode);
     
-    // Update the game object
-    Object.assign(game, defaultState);
-    
-    // Validate player data
-    game.players = game.players.filter(player => {
-      return player && 
-             typeof player.id === 'string' && 
-             typeof player.username === 'string' &&
-             player.id.length > 0 &&
-             player.username.length > 0;
-    });
-    
-    // Clean up invalid grids
-    for (const playerId in game.grids) {
-      if (!game.players.some(p => p.id === playerId)) {
-        delete game.grids[playerId];
-      }
+    // Convert markedNumbers to Set if it's not already
+    if (!(game.markedNumbers instanceof Set)) {
+      console.log('Converting markedNumbers to Set');
+      game.markedNumbers = new Set(Array.isArray(game.markedNumbers) ? game.markedNumbers : []);
     }
     
-    // Ensure host exists
-    if (!game.hostUsername && game.players.length > 0) {
-      game.hostUsername = game.players[0].username;
+    // Convert usedGrids to Set if it's not already
+    if (!(game.usedGrids instanceof Set)) {
+      console.log('Converting usedGrids to Set');
+      game.usedGrids = new Set(Array.isArray(game.usedGrids) ? game.usedGrids : []);
+    }
+    
+    // Ensure grids is an object
+    if (!game.grids || typeof game.grids !== 'object') {
+      console.log('Initializing grids object');
+      game.grids = {};
+    }
+    
+    // Ensure playerNumbers is an object
+    if (!game.playerNumbers || typeof game.playerNumbers !== 'object') {
+      console.log('Initializing playerNumbers object');
+      game.playerNumbers = {};
+    }
+    
+    // Ensure players is an array
+    if (!Array.isArray(game.players)) {
+      console.log('Initializing players array');
+      game.players = [];
+    }
+    
+    // Ensure readyPlayers is an array
+    if (!Array.isArray(game.readyPlayers)) {
+      console.log('Initializing readyPlayers array');
+      game.readyPlayers = [];
+    }
+    
+    // Ensure turnIndex is a number
+    if (typeof game.turnIndex !== 'number') {
+      console.log('Setting turnIndex to 0');
+      game.turnIndex = 0;
+    }
+    
+    // Ensure lastMarkedTurn is a number
+    if (typeof game.lastMarkedTurn !== 'number') {
+      console.log('Setting lastMarkedTurn to -1');
+      game.lastMarkedTurn = -1;
+    }
+    
+    // Ensure turnDuration is a number
+    if (typeof game.turnDuration !== 'number') {
+      console.log('Setting turnDuration to 15000');
+      game.turnDuration = 15000;
+    }
+    
+    // Ensure started is a boolean
+    if (typeof game.started !== 'boolean') {
+      console.log('Setting started to false');
+      game.started = false;
+    }
+    
+    // Ensure createdAt is a number
+    if (typeof game.createdAt !== 'number') {
+      console.log('Setting createdAt to current timestamp');
+      game.createdAt = Date.now();
+    }
+    
+    // Ensure lastActive is a number
+    if (typeof game.lastActive !== 'number') {
+      console.log('Setting lastActive to current timestamp');
+      game.lastActive = Date.now();
     }
     
     // Save the repaired state
     saveGames();
     
-    console.log(`Successfully repaired room state for ${roomCode}`);
+    console.log('Successfully repaired room state for', game.roomCode);
     return true;
   } catch (error) {
-    console.error(`Error repairing room state for ${roomCode}:`, error);
+    console.error('Error repairing room state:', error);
     return false;
   }
 }
@@ -1034,7 +1059,7 @@ io.on('connection', (socket) => {
       // Validate and repair room state if necessary
       if (!validateRoomState(roomCode)) {
         console.log(`Room state invalid for ${roomCode}, attempting repair...`);
-        if (repairRoomState(roomCode)) {
+        if (repairRoomState(game)) {
           game = games[roomCode];
           console.log(`Successfully repaired room state for ${roomCode}`);
         } else {
