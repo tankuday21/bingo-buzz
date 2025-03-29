@@ -23,6 +23,7 @@ const GamePage = () => {
   // Game state
   const [grid, setGrid] = useState([]);
   const [isGridReady, setIsGridReady] = useState(false);
+  const isGridReadyRef = useRef(isGridReady); // Ref to track grid readiness
   const [players, setPlayers] = useState([]);
   const [markedCells, setMarkedCells] = useState([]);
   const [currentTurn, setCurrentTurn] = useState(null);
@@ -53,7 +54,6 @@ const GamePage = () => {
   const timerIntervalRef = useRef(null);
   const audioRef = useRef(null);
   const hasJoinedRef = useRef(false);
-  const timerRef = useRef(null);
   
   // Add socket connection status tracking
   const [socketConnected, setSocketConnected] = useState(socket.connected);
@@ -101,6 +101,12 @@ const GamePage = () => {
     }
   };
   
+  // Effect to keep isGridReadyRef updated with the latest state
+  useEffect(() => {
+    isGridReadyRef.current = isGridReady;
+    if (DEBUG) console.log(`[Effect] isGridReady state changed to: ${isGridReady}, updated ref.`);
+  }, [isGridReady]);
+  
   // Join game on mount
   useEffect(() => {
     if (!username) {
@@ -118,7 +124,7 @@ const GamePage = () => {
     
     // Reset game state on mount
     setGrid([]);
-    setIsGridReady(false);
+    setIsGridReady(false); // Also resets the ref via the effect above
     setPlayers([]);
     setMarkedCells([]);
     setCurrentTurn(null);
@@ -132,6 +138,7 @@ const GamePage = () => {
     setWaitingForPlayers(true);
     setReadyPlayers([]);
     setIsReady(false);
+    pendingMarkedNumbersRef.current = []; // Clear pending numbers on join/reset
     
     // Only join room if we haven't already
     if (!hasJoinedRef.current) {
@@ -310,63 +317,57 @@ const GamePage = () => {
     };
   }, [navigate]);
   
-  // Process any queued marked numbers whenever the grid changes
-  useEffect(() => {
-    if (grid && grid.length > 0 && pendingMarkedNumbersRef.current.length > 0) {
-      console.log(`Grid now available, processing ${pendingMarkedNumbersRef.current.length} queued numbers`);
-      
-      // Process all pending numbers
-      const pendingNumbers = [...pendingMarkedNumbersRef.current];
-      // Clear the queue
-      pendingMarkedNumbersRef.current = [];
-      
-      // Process each pending number
-      pendingNumbers.forEach(pendingNumber => {
-        console.log('Processing queued number:', pendingNumber);
-        handleNumberMarked(pendingNumber);
-      });
-    }
-  }, [grid]);
-  
   // Event handler functions
-  const handleGridAssigned = (assignedGrid) => {
+  const handleGridAssigned = useCallback((assignedGrid) => {
     if (DEBUG) console.log('[handleGridAssigned] Received grid:', assignedGrid);
     if (assignedGrid && Array.isArray(assignedGrid) && assignedGrid.length > 0) {
-      setGrid(assignedGrid);
-      setIsGridReady(true);
+      // Use functional update to ensure we have the latest grid if needed elsewhere
+      setGrid(() => {
+        // Process pending numbers using the grid *about* to be set
+        if (pendingMarkedNumbersRef.current.length > 0) {
+          console.log(`[handleGridAssigned] Processing ${pendingMarkedNumbersRef.current.length} pending marked numbers with newly assigned grid.`);
+          const numbersToProcess = [...pendingMarkedNumbersRef.current];
+          pendingMarkedNumbersRef.current = []; // Clear the queue
+          processMarkedNumbers(numbersToProcess, assignedGrid); // Use assignedGrid directly
+        }
+        return assignedGrid; // Return the new grid for the state update
+      });
+      setIsGridReady(true); // This will trigger the effect to update the ref
       console.log('[handleGridAssigned] Grid state updated and set to ready.');
-      
-      // Process any pending marked numbers immediately after grid is ready
-      if (pendingMarkedNumbersRef.current.length > 0) {
-        console.log(`[handleGridAssigned] Processing ${pendingMarkedNumbersRef.current.length} pending marked numbers.`);
-        const numbersToProcess = [...pendingMarkedNumbersRef.current];
-        pendingMarkedNumbersRef.current = []; // Clear the queue
-        
-        // Use the newly set grid for processing
-        processMarkedNumbers(numbersToProcess, assignedGrid);
-      }
+
     } else {
       console.error('[handleGridAssigned] Received invalid grid data:', assignedGrid);
-      setIsGridReady(false); // Ensure flag is false if grid is invalid
-      // Optionally request grid again if it's invalid?
-      // socket.emit('request-grid', { roomCode });
+      setIsGridReady(false); // Ensure flag and ref are false if grid is invalid
     }
-  };
-  
-  // Separate function to process marked numbers (used by handleNumberMarked and handleGridAssigned)
+  }, [roomCode]); // Add dependencies if needed, e.g., processMarkedNumbers if it's not stable
+
+  // Separate function to process marked numbers 
+  // Ensure this function doesn't rely on stale state if called from useCallback handlers
   const processMarkedNumbers = (numbers, currentGrid) => {
-    if (!currentGrid || currentGrid.length === 0) {
-        console.error("[processMarkedNumbers] Attempted to process numbers but grid is invalid.", currentGrid);
+    // Add guard clause for invalid grid early
+    if (!currentGrid || !Array.isArray(currentGrid) || currentGrid.length === 0) {
+        console.error("[processMarkedNumbers] Attempted to process numbers but grid is invalid or empty.", currentGrid);
         return; 
     }
     console.log('[processMarkedNumbers] Processing numbers:', numbers, 'with grid:', currentGrid);
-    const flatGrid = currentGrid.flat();
+    
+    // Ensure grid is treated as 2D array for findIndex logic if necessary
+    // Assuming grid is flat array based on previous code:
+    const flatGrid = currentGrid.flat(); // Flatten if grid is 2D, okay if already flat
     const newMarkedIndices = [];
+    const newHistoryNumbers = [];
 
     numbers.forEach(number => {
-        const cellIndex = flatGrid.findIndex(cellNum => cellNum === number);
+        // Check if number is already processed in current history (important for sync)
+        if (markedHistory.includes(number)) {
+            console.log(`[processMarkedNumbers] Number ${number} is already in markedHistory. Skipping.`);
+            return;
+        }
+
+        const cellIndex = flatGrid.findIndex(cellValue => cellValue === number);
         if (cellIndex !== -1) {
             newMarkedIndices.push(cellIndex);
+            newHistoryNumbers.push(number); // Add to history only if found in grid
         } else {
             console.warn(`[processMarkedNumbers] Number ${number} not found in the current grid.`);
         }
@@ -374,57 +375,60 @@ const GamePage = () => {
 
     if (newMarkedIndices.length > 0) {
         console.log('[processMarkedNumbers] Updating markedCells state with indices:', newMarkedIndices);
+        // Use functional update for markedCells
         setMarkedCells(prev => {
             const updatedSet = new Set(prev);
             newMarkedIndices.forEach(index => updatedSet.add(index));
-            // Convert back to array if necessary, or keep as Set if BingoGrid handles it
             return Array.from(updatedSet); 
         });
-        // Update marked history as well
-        setMarkedHistory(prev => [...prev, ...numbers]);
+        // Use functional update for markedHistory
+        setMarkedHistory(prev => [...prev, ...newHistoryNumbers]);
     }
   };
 
   // Handle receiving a marked number from the server
-  const handleNumberMarked = ({ number }) => {
-    if (DEBUG) console.log('[handleNumberMarked] Received marked number:', number);
-    
-    if (isGridReady) {
-      // Grid is ready, process immediately using the current grid state
-      console.log('[handleNumberMarked] Grid is ready. Processing number immediately.');
-      // Pass the current grid state directly to avoid closure issues
-      setGrid(currentGrid => {
-        processMarkedNumbers([number], currentGrid);
-        return currentGrid; // Return currentGrid to satisfy setState updater form
-      });
+  // Use useCallback to potentially stabilize the function reference if needed as dependency elsewhere
+  const handleNumberMarked = useCallback(({ number }) => {
+    // Use the REF here to check grid readiness
+    console.log(`[handleNumberMarked] Received marked number: ${number}. Checking grid readiness... Current isGridReadyRef.current: ${isGridReadyRef.current}`); 
+
+    if (isGridReadyRef.current) {
+      // Grid is ready, process immediately using the current grid state from useState
+      console.log('[handleNumberMarked] Grid IS ready (ref check). Processing number immediately.');
+      // Pass the current grid state directly. Need to ensure processMarkedNumbers handles potential stale grid state if not using functional updates inside it.
+      // processMarkedNumbers relies on markedHistory state, which might also be stale here.
+      // Safer to update state functionally if processMarkedNumbers reads state.
+      // Let's call processMarkedNumbers directly but be mindful of its dependencies.
+       processMarkedNumbers([number], grid); // Pass the current grid state
     } else {
       // Grid is not ready, queue the number
-      console.warn(`[handleNumberMarked] Grid not ready when receiving number ${number}. Queuing.`);
-      pendingMarkedNumbersRef.current.push(number);
-      // **DO NOT repeatedly request grid here - rely on initial join/rejoin logic**
-      // console.log('Requesting grid from server because it was not loaded...');
-      // socket.emit('request-grid', { roomCode }); 
+      console.warn(`[handleNumberMarked] Grid is NOT ready (ref check) when receiving number ${number}. Queuing.`);
+      // Avoid adding duplicates to the queue
+      if (!pendingMarkedNumbersRef.current.includes(number)) {
+          pendingMarkedNumbersRef.current.push(number);
+      }
     }
-  };
+  }, [grid]); // Add grid as dependency, ensure processMarkedNumbers is stable or included
 
   // Handle receiving a full sync of marked numbers
-  const handleSyncMarkedNumbers = ({ markedNumbers }) => {
-    if (DEBUG) console.log('[handleSyncMarkedNumbers] Received sync event with numbers:', markedNumbers);
+  const handleSyncMarkedNumbers = useCallback(({ markedNumbers }) => {
+    // Use the REF here
+    console.log(`[handleSyncMarkedNumbers] Received sync event with ${markedNumbers?.length} numbers. Checking grid readiness... Current isGridReadyRef.current: ${isGridReadyRef.current}`); 
     if (Array.isArray(markedNumbers)) {
-        if (isGridReady) {
+        if (isGridReadyRef.current) {
             // Grid is ready, process immediately
-            console.log('[handleSyncMarkedNumbers] Grid is ready. Processing synced numbers.');
-            setGrid(currentGrid => {
-              processMarkedNumbers(markedNumbers, currentGrid);
-              return currentGrid;
-            });
+            console.log('[handleSyncMarkedNumbers] Grid IS ready (ref check). Processing synced numbers.');
+            // Pass the current grid state
+            processMarkedNumbers(markedNumbers, grid);
         } else {
-            // Grid not ready, replace the queue with the synced list
-            console.warn('[handleSyncMarkedNumbers] Grid not ready. Replacing queue with synced numbers.');
-            pendingMarkedNumbersRef.current = markedNumbers;
+            // Grid not ready, replace the queue with the synced list, ensuring no duplicates
+            console.warn('[handleSyncMarkedNumbers] Grid is NOT ready (ref check). Replacing queue with synced numbers.');
+            pendingMarkedNumbersRef.current = [...new Set(markedNumbers)]; // Use Set to remove duplicates
         }
+    } else {
+        console.error('[handleSyncMarkedNumbers] Received invalid markedNumbers data:', markedNumbers);
     }
-  };
+  }, [grid]); // Add grid as dependency
   
   // Fix player mapping in the waiting room section
   const normalizePlayer = (player) => {
@@ -443,49 +447,48 @@ const GamePage = () => {
     console.log('Joined room:', data);
     setIsHost(data.isHost);
     
-    // Normalize players to handle different data structures
+    // Normalize players
     const normalizedPlayers = Array.isArray(data.players) 
       ? data.players.map(p => normalizePlayer(p))
       : [];
-    
     setPlayers(normalizedPlayers);
     
-    // IMPORTANT: Make sure grid is set correctly from the joined-room event
-    if (data.grid && Array.isArray(data.grid)) {
-      console.log('Setting grid from joined-room event. Grid size:', 
-                  Array.isArray(data.grid[0]) ? 
-                  `${data.grid.length}x${data.grid[0].length}` : 
-                  `${data.grid.length} (flat array)`);
-      
-      // Deep copy the grid to avoid reference issues and ensure state updates
-      const gridCopy = JSON.parse(JSON.stringify(data.grid));
-      setGrid(() => gridCopy); // Use callback form to ensure immediate state update
-      
-      // Process any pending marked numbers after a short delay to ensure grid state update
-      setTimeout(() => {
-        if (pendingMarkedNumbersRef.current.length > 0) {
-          console.log(`Processing ${pendingMarkedNumbersRef.current.length} queued numbers after joined-room`);
-          const pendingNumbers = [...pendingMarkedNumbersRef.current];
-          pendingMarkedNumbersRef.current = [];
-          pendingNumbers.forEach(pendingNumber => {
-            handleNumberMarked(pendingNumber);
-          });
-        }
-      }, 500);
+    // Reset grid/ready state before processing joined-room data
+    setGrid([]);
+    setIsGridReady(false);
+    pendingMarkedNumbersRef.current = []; // Clear pending numbers
+
+    if (data.grid && Array.isArray(data.grid) && data.grid.length > 0) {
+        console.log('Setting grid from joined-room event.');
+        // Directly call handleGridAssigned to ensure consistent logic including pending number processing
+        handleGridAssigned(data.grid); 
     } else {
-      console.warn('No valid grid data in joined-room event:', data);
+        console.warn('No valid grid data in joined-room event:', data);
+        // Explicitly request grid if none provided
+         socket.emit('request-grid', { roomCode });
     }
     
-    // If the game is already in progress, skip waiting room
+    // If game is already in progress, request sync
     if (data.gameStarted) {
       setWaitingForPlayers(false);
       setGameStarted(true);
+      console.log('Game already started on join, requesting marked numbers sync.');
+      socket.emit('request-marked-numbers', { roomCode }); // Request full state
+      
+      // Set turn info if available
+       if (data.currentTurn) {
+         setCurrentTurn(data.currentTurn);
+         const turnPlayer = normalizedPlayers.find(p => p.id === data.currentTurn);
+         setCurrentTurnName(turnPlayer ? turnPlayer.username : 'Unknown');
+         setIsMyTurn(data.currentTurn === socket.id);
+       }
+
     } else {
       setWaitingForPlayers(true);
       setGameStarted(false);
     }
     
-    // Update ready players list if available
+    // Update ready players list
     if (data.readyPlayers) {
       setReadyPlayers(data.readyPlayers);
       setIsReady(data.readyPlayers.includes(username));
@@ -556,51 +559,40 @@ const GamePage = () => {
   
   const handleGameStarted = (data) => {
     console.log('Game started:', data);
+    setWaitingForPlayers(false); // Ensure waiting room UI is hidden
     setGameStarted(true);
-    setWaitingForPlayers(false);
     
-    // Handle grid initialization if included in game-started event
-    if (data.grid && Array.isArray(data.grid)) {
-      console.log('Setting grid from game-started event. Grid size:', 
-                  Array.isArray(data.grid[0]) ? 
-                  `${data.grid.length}x${data.grid[0].length}` : 
-                  `${data.grid.length} (flat array)`);
-      
-      // Deep copy the grid to avoid reference issues
-      const gridCopy = JSON.parse(JSON.stringify(data.grid));
-      setGrid(() => gridCopy);
-      
-      // If our grid is just now being set, check for any queued marked numbers
-      setTimeout(() => {
-        if (pendingMarkedNumbersRef.current.length > 0) {
-          console.log(`Processing ${pendingMarkedNumbersRef.current.length} queued numbers after game start`);
-          const pendingNumbers = [...pendingMarkedNumbersRef.current];
-          pendingMarkedNumbersRef.current = [];
-          pendingNumbers.forEach(pendingNumber => {
-            handleNumberMarked(pendingNumber);
-          });
-        }
-      }, 500);
-    } else if (!grid || grid.length === 0) {
-      console.warn('No grid data in game-started event and no grid currently set:', data);
-      // Request grid from server if we don't have one
-      socket.emit('request-grid', { roomCode });
-    }
-    
-    if (data.currentTurn) {
-      setCurrentTurn(data.currentTurn);
-      setCurrentTurnName(data.currentTurn);
-      setIsMyTurn(data.currentTurn === socket.id);
-    }
-    
-    // Reset UI state
+    // Reset relevant game state for a fresh start
     setWinner(null);
     setWinningLines([]);
     setMarkedCells([]);
+    setMarkedHistory([]); // Clear history on new game start
     setTimer(15);
+    pendingMarkedNumbersRef.current = []; // Clear pending queue
+
+    // Grid might be sent with game-started, handle it consistently
+    if (data.grid && Array.isArray(data.grid) && data.grid.length > 0) {
+        console.log('Setting grid from game-started event.');
+        handleGridAssigned(data.grid); // Use the handler
+    } else if (!isGridReadyRef.current) { // Check ref, might not have grid yet
+        console.warn('No grid data in game-started event and grid not ready. Requesting grid.');
+        socket.emit('request-grid', { roomCode });
+    }
+    
+    // Set initial turn
+    if (data.currentTurn) {
+      setCurrentTurn(data.currentTurn);
+      const turnPlayer = players.find(p => p.id === data.currentTurn) || data.player; // Use data.player as fallback
+      const turnPlayerName = turnPlayer ? turnPlayer.username : 'Unknown';
+      setCurrentTurnName(turnPlayerName);
+      const isMyTurnNow = data.currentTurn === socket.id;
+      setIsMyTurn(isMyTurnNow);
+       setGameMessage(`Game started! ${isMyTurnNow ? 'Your' : `${turnPlayerName}'s`} turn`);
+    } else {
+        setGameMessage('Game started! Waiting for first turn...');
+    }
     
     toast.success('Game started!');
-    setGameMessage(`Game started! ${data.currentTurn === socket.id ? 'Your' : `${data.player?.username || 'Someone else'}'s`} turn`);
     
     // Play start sound
     if (audioRef.current) {
