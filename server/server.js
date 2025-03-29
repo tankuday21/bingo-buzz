@@ -452,6 +452,22 @@ app.get('/', (req, res) => {
   });
 });
 
+// Add cleanupExpiredRoom function
+function cleanupExpiredRoom(roomCode) {
+  const game = games[roomCode];
+  if (!game) return false;
+  
+  // Check if the game is expired (30 minutes of inactivity)
+  const now = Date.now();
+  if (now - game.lastActive > INACTIVE_GAME_TIMEOUT) {
+    console.log(`Cleaning up expired room: ${roomCode}`);
+    delete games[roomCode];
+    return true;
+  }
+  
+  return false;
+}
+
 // Socket.io logic
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
@@ -611,20 +627,40 @@ io.on('connection', (socket) => {
 
   // Handle player joining a room
   socket.on('join-room', ({ roomCode, username }) => {
-    console.log(`Player ${username} (${socket.id}) joining room ${roomCode}`);
+    console.log(`Player ${username} (${socket.id}) attempting to join room ${roomCode}`);
     
     try {
-      // Check if room code is valid
-      if (!roomCode) {
-        console.log('Join attempt with invalid room code');
-        socket.emit('join-error', { message: 'Invalid room code' });
+      // Validate input parameters
+      if (!roomCode || typeof roomCode !== 'string') {
+        console.log('Join attempt with invalid room code:', roomCode);
+        socket.emit('join-error', { 
+          message: 'Invalid room code',
+          details: 'Room code must be a non-empty string'
+        });
+        return;
+      }
+
+      if (!username || typeof username !== 'string') {
+        console.log('Join attempt with invalid username:', username);
+        socket.emit('join-error', { 
+          message: 'Invalid username',
+          details: 'Username must be a non-empty string'
+        });
         return;
       }
       
+      // Check if room exists and clean up if expired
+      const wasExpired = cleanupExpiredRoom(roomCode);
       const game = games[roomCode];
+      
       if (!game) {
-        console.log(`Room not found: ${roomCode}`);
-        socket.emit('join-error', { message: 'Room not found' });
+        console.log(`Room not found: ${roomCode}. Available rooms: ${Object.keys(games).join(', ')}`);
+        socket.emit('join-error', { 
+          message: 'Room not found',
+          details: wasExpired 
+            ? 'This room has expired due to inactivity. Please create a new game.'
+            : 'The room you are trying to join does not exist.'
+        });
         return;
       }
       
@@ -636,7 +672,10 @@ io.on('connection', (socket) => {
       
       if (game.started) {
         console.log(`Rejected join: Game already in progress, room: ${roomCode}`);
-        socket.emit('join-error', { message: 'Game already in progress' });
+        socket.emit('join-error', { 
+          message: 'Game already in progress',
+          details: 'This game has already started. Please create a new game or join a different room.'
+        });
         return;
       }
       
@@ -714,7 +753,10 @@ io.on('connection', (socket) => {
       
     } catch (error) {
       console.error('Error in join-room handler:', error);
-      socket.emit('join-error', { message: 'Failed to join room' });
+      socket.emit('join-error', { 
+        message: 'Failed to join room',
+        details: error.message
+      });
     }
   });
   
