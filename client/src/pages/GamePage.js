@@ -388,9 +388,11 @@ const GamePage = () => {
 
   // Handle receiving a marked number from the server
   // Use useCallback to potentially stabilize the function reference if needed as dependency elsewhere
-  const handleNumberMarked = useCallback(({ number }) => {
+  // Update destructuring to only expect number, markedBy, automatic
+  const handleNumberMarked = useCallback(({ number, markedBy, automatic }) => { 
     // Use the REF here to check grid readiness
-    console.log(`[handleNumberMarked] Received marked number: ${number}. Checking grid readiness... Current isGridReadyRef.current: ${isGridReadyRef.current}`); 
+    // Log received data
+    console.log(`[handleNumberMarked] Received event. Number: ${number}, MarkedBy: ${markedBy}, Automatic: ${automatic}. Checking grid readiness... Current isGridReadyRef.current: ${isGridReadyRef.current}`);
 
     if (isGridReadyRef.current) {
       // Grid is ready. Use functional setGrid to access the LATEST grid state

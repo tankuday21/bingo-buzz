@@ -1377,7 +1377,6 @@ io.on('connection', (socket) => {
       socket.emit('number-marked', {
         number: number,
         markedBy: socket.id,
-        player: player, 
         automatic: false
       });
       
@@ -1387,7 +1386,6 @@ io.on('connection', (socket) => {
       socket.broadcast.to(roomCode).emit('number-marked', {
         number: number,
         markedBy: socket.id,
-        player: player,
         automatic: false
       });
       
@@ -1490,7 +1488,6 @@ io.on('connection', (socket) => {
           io.to(roomCode).emit('number-marked', {
             number: randomNumber,
             markedBy: socket.id,
-            player: player,
             automatic: true
           });
           
@@ -1840,7 +1837,6 @@ function startTurn(roomCode) {
       io.to(roomCode).emit('number-marked', {
         number: randomNum,
         markedBy: game.currentTurn,
-        player: currentPlayer,
         automatic: true
       });
       
