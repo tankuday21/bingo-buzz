@@ -693,36 +693,43 @@ const GamePage = () => {
   
   // Handle player ready state changes
   const handlePlayerReady = ({ username: readyUsername, readyPlayers }) => {
-    console.log(`Player ready update received: ${readyUsername}, Ready players:`, readyPlayers);
-    
+    console.log(`[Socket Event Received] Player ready update: ${readyUsername}, Ready players:`, readyPlayers);
+
     if (Array.isArray(readyPlayers)) {
       setReadyPlayers(readyPlayers);
-      
+
       // Check if I'm the player who toggled ready status
       if (readyUsername === username) {
         const amIReady = readyPlayers.includes(username);
-        console.log(`Updating my ready status to ${amIReady}`);
-        setIsReady(amIReady);
+        console.log(`[handlePlayerReady] Updating my local isReady status based on server: ${amIReady}`);
+        setIsReady(amIReady); // Sync local state with server authoritative list
       }
-      
-      // Show a notification
-      const isPlayerReady = readyPlayers.includes(readyUsername);
-      toast.success(`${readyUsername} is ${isPlayerReady ? 'ready' : 'not ready'}`);
+
+      // Show a notification (optional, can be noisy)
+      // const isPlayerReady = readyPlayers.includes(readyUsername);
+      // toast.success(`${readyUsername} is ${isPlayerReady ? 'ready' : 'not ready'}`);
     } else {
-      console.error('Invalid readyPlayers data received:', readyPlayers);
+      console.error('[handlePlayerReady] Invalid readyPlayers data received:', readyPlayers);
     }
   };
   
   // Toggle ready status
   const handleToggleReady = useCallback(() => {
     if (!socket.connected) {
+      console.error('[handleToggleReady] Socket not connected.');
       toast.error('Not connected to server.');
       return;
     }
     const newState = !isReady;
-    setIsReady(newState);
-    socket.emit('player-ready', { roomCode, isReady: newState });
-  }, [isReady, roomCode]);
+    console.log(`[handleToggleReady] Toggling ready status. Current: ${isReady}, New: ${newState}`);
+    
+    // Optimistically update local state for immediate feedback
+    setIsReady(newState); 
+    
+    // Emit the event to the server - ** Use 'toggle-ready' **
+    console.log('[handleToggleReady] Emitting toggle-ready event to server:', { roomCode, username, isReady: newState });
+    socket.emit('toggle-ready', { roomCode, username, isReady: newState });
+  }, [isReady, roomCode, username]);
   
   // Start the game (host only)
   const handleStartGame = useCallback(() => {
