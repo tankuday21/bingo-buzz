@@ -49,6 +49,7 @@ const GamePage = () => {
   
   // State for tracking if a number is being marked (to prevent multiple clicks)
   const [isMarking, setIsMarking] = useState(false);
+  const isMarkingRef = useRef(isMarking); // <<< Add ref for isMarking
   
   // Refs
   const timerIntervalRef = useRef(null);
@@ -106,6 +107,13 @@ const GamePage = () => {
     isGridReadyRef.current = isGridReady;
     if (DEBUG) console.log(`[Effect] isGridReady state changed to: ${isGridReady}, updated ref.`);
   }, [isGridReady]);
+  
+  // <<< Add effect to keep isMarkingRef updated >>>
+  useEffect(() => {
+    isMarkingRef.current = isMarking;
+    // Optional: Add debug log if needed
+    // if (DEBUG) console.log(`[Effect] isMarking state changed to: ${isMarking}, updated ref.`);
+  }, [isMarking]);
   
   // Join game on mount
   useEffect(() => {
@@ -750,18 +758,19 @@ const GamePage = () => {
   
   // Handle marking a number
   const handleMarkNumber = useCallback((cellIndex, number) => {
-    if (!isMyTurn || !gameStarted || isMarking) {
-      console.log('Cannot mark number:', { isMyTurn, gameStarted, isMarking });
+    // <<< Use the isMarkingRef for the check >>>
+    if (!isMyTurn || !gameStarted || isMarkingRef.current) {
+      console.log('Cannot mark number:', { isMyTurn, gameStarted, isMarking: isMarkingRef.current }); // Log ref value
       // Do not proceed if conditions aren't met
       // If isMarking is true, it means a mark attempt is already in progress.
-      if (isMarking) {
+      if (isMarkingRef.current) { // Check ref here too
         toast.error("Please wait for the previous action to complete.");
       }
       return;
     }
     
     console.log(`Attempting to mark number ${number} at index ${cellIndex}`);
-    setIsMarking(true); // <<< Set lock immediately
+    setIsMarking(true); // <<< Still use state setter here to trigger update & effect
     
     // Add specific log before emitting
     console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
@@ -772,13 +781,12 @@ const GamePage = () => {
       cellIndex 
     });
 
-    // Remove the optimistic update and the timeout
-    // setMarkedCells(prev => [...prev, cellIndex]); 
-    // setTimeout(() => {
-    //   setIsMarking(false);
-    // }, 500); 
+    // Resetting isMarking is now handled by handleNumberMarked or handleError
 
-  }, [isMyTurn, gameStarted, roomCode, isMarking]); // Added isMarking
+  // Update dependencies for useCallback - isMarking state is no longer directly read here
+  // but the callback should still update if gameStarted/isMyTurn changes.
+  // We depend on the isMarkingRef which updates independently.
+  }, [isMyTurn, gameStarted, roomCode]); 
   
   // Add connection status indicator to UI
   const ConnectionStatus = () => (
