@@ -1386,6 +1386,8 @@ io.on('connection', (socket) => {
         console.error(`[mark-number] CRITICAL: Error occurred DURING io.to(${roomCode}).emit:`, emitError);
         // Attempt to notify the client about this specific failure
         try { socket.emit('error', 'Server failed during broadcast emit'); } catch(e) { console.error("Failed even to emit the broadcast error notice", e); }
+        // If emit fails, we probably shouldn't proceed with win check/turn change, as clients are out of sync
+        return; // Exit the handler early
       }
 
       // ~~ Remove separate sender confirmation and broadcast ~~
@@ -1397,7 +1399,20 @@ io.on('connection', (socket) => {
       */
       
       // Check for a winner
-      const winner = checkWinUtils(game);
+      let winner = null;
+      try {
+        console.log(`[mark-number] PRE-CHECKWIN: Calling checkWinUtils for room ${roomCode}`);
+        winner = checkWinUtils(game);
+        console.log(`[mark-number] POST-CHECKWIN: Result for room ${roomCode}:`, winner ? `Winner ${winner.playerId}` : 'No winner');
+      } catch (winCheckError) {
+        console.error(`[mark-number] CRITICAL: Error occurred DURING checkWinUtils for room ${roomCode}:`, winCheckError);
+        // Attempt to notify client and maybe end game?
+        try { io.to(roomCode).emit('error', 'Server error checking win condition'); } catch(e) { console.error("Failed to emit win check error notice", e); }
+        // Decide how to handle: potentially end game or just log?
+        // For now, just log and prevent further processing in this handler state
+        return; 
+      }
+      
       if (winner) {
         const winningPlayer = game.players.find(p => p.id === winner.playerId);
         
@@ -1422,18 +1437,29 @@ io.on('connection', (socket) => {
         game.started = false;
       } else {
         // Move to next turn
+        console.log(`[mark-number] PRE-NEXT_TURN: Moving to next turn for room ${roomCode}. Current index: ${game.turnIndex}, Player count: ${game.players.length}`);
         game.turnIndex = (game.turnIndex + 1) % game.players.length;
         game.currentTurn = game.players[game.turnIndex].id;
         
         // Emit turn changed to all players
         const nextPlayer = game.players[game.turnIndex];
+        console.log(`[mark-number] Emitting turn-changed for room ${roomCode}. Next turn: ${nextPlayer?.username} (${game.currentTurn})`);
         io.to(roomCode).emit('turn-changed', {
           currentTurn: game.currentTurn,
           player: nextPlayer
         });
         
         // Start the new turn
-        startTurn(roomCode);
+        try {
+          console.log(`[mark-number] PRE-START_TURN: Calling startTurn for room ${roomCode}`);
+          startTurn(roomCode);
+          console.log(`[mark-number] POST-START_TURN: Successfully called startTurn for room ${roomCode}`);
+        } catch (startTurnError) {
+          console.error(`[mark-number] CRITICAL: Error occurred DURING startTurn call for room ${roomCode}:`, startTurnError);
+          // Attempt to notify client
+          try { io.to(roomCode).emit('error', 'Server error starting next turn'); } catch(e) { console.error("Failed to emit start turn error notice", e); }
+          // Game state might be broken here, consider ending or resetting
+        }
       }
     } catch (error) {
       // This is the catch block for the broader handler logic (validations, state updates etc.)
@@ -1506,7 +1532,20 @@ io.on('connection', (socket) => {
           });
           
           // Check for a winner
-          const winner = checkWinUtils(game);
+          let winner = null;
+          try {
+            console.log(`[mark-number] PRE-CHECKWIN: Calling checkWinUtils for room ${roomCode}`);
+            winner = checkWinUtils(game);
+            console.log(`[mark-number] POST-CHECKWIN: Result for room ${roomCode}:`, winner ? `Winner ${winner.playerId}` : 'No winner');
+          } catch (winCheckError) {
+            console.error(`[mark-number] CRITICAL: Error occurred DURING checkWinUtils for room ${roomCode}:`, winCheckError);
+            // Attempt to notify client and maybe end game?
+            try { io.to(roomCode).emit('error', 'Server error checking win condition'); } catch(e) { console.error("Failed to emit win check error notice", e); }
+            // Decide how to handle: potentially end game or just log?
+            // For now, just log and prevent further processing in this handler state
+            return; 
+          }
+          
           if (winner) {
             const winningPlayer = game.players.find(p => p.id === winner.playerId);
             
@@ -1855,7 +1894,20 @@ function startTurn(roomCode) {
       });
       
       // Check for a winner
-      const winner = checkWinUtils(game);
+      let winner = null;
+      try {
+        console.log(`[mark-number] PRE-CHECKWIN: Calling checkWinUtils for room ${roomCode}`);
+        winner = checkWinUtils(game);
+        console.log(`[mark-number] POST-CHECKWIN: Result for room ${roomCode}:`, winner ? `Winner ${winner.playerId}` : 'No winner');
+      } catch (winCheckError) {
+        console.error(`[mark-number] CRITICAL: Error occurred DURING checkWinUtils for room ${roomCode}:`, winCheckError);
+        // Attempt to notify client and maybe end game?
+        try { io.to(roomCode).emit('error', 'Server error checking win condition'); } catch(e) { console.error("Failed to emit win check error notice", e); }
+        // Decide how to handle: potentially end game or just log?
+        // For now, just log and prevent further processing in this handler state
+        return; 
+      }
+      
       if (winner) {
         const winningPlayer = game.players.find(p => p.id === winner.playerId);
         
@@ -1878,6 +1930,8 @@ function startTurn(roomCode) {
         
         // End the game
         game.started = false;
+      } else {
+        console.log(`No unmarked numbers left for player ${currentPlayer.username}`);
       }
     } else {
       console.log(`No unmarked numbers left for player ${currentPlayer.username}`);
