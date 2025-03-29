@@ -505,13 +505,16 @@ function loadGames() {
       const data = fs.readFileSync(GAMES_FILE, 'utf8');
       const loadedGames = JSON.parse(data);
       
-      // Convert markedNumbers back to Set
+      // Convert markedNumbers and usedGrids back to Sets
       for (const roomCode in loadedGames) {
         if (loadedGames[roomCode].markedNumbers) {
           loadedGames[roomCode].markedNumbers = new Set(loadedGames[roomCode].markedNumbers);
         }
         if (loadedGames[roomCode].usedGrids) {
           loadedGames[roomCode].usedGrids = new Set(loadedGames[roomCode].usedGrids);
+        } else {
+          // Initialize usedGrids as a Set if it doesn't exist
+          loadedGames[roomCode].usedGrids = new Set();
         }
       }
       
@@ -1101,7 +1104,7 @@ io.on('connection', (socket) => {
         existingPlayer.id = socket.id;
         
         // Get the existing grid or generate a new one
-        playerGrid = game.grids[existingPlayer.id] || generateUniquePlayerGrid(game.gridSize, username, game.usedGrids);
+        playerGrid = game.grids[existingPlayer.id] || generateUniquePlayerGrid(game.gridSize, username, game.usedGrids || new Set());
         game.grids[socket.id] = playerGrid;
         
         // Clean up old grid reference
@@ -1110,7 +1113,7 @@ io.on('connection', (socket) => {
         }
       } else {
         // Generate a new grid for new player
-        playerGrid = generateUniquePlayerGrid(game.gridSize, username, game.usedGrids);
+        playerGrid = generateUniquePlayerGrid(game.gridSize, username, game.usedGrids || new Set());
         game.grids[socket.id] = playerGrid;
         
         // Add player to the game
