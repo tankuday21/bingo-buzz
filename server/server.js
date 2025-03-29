@@ -7,6 +7,8 @@ const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const LeaderboardModel = require('./models/leaderboard');
 const gameUtils = require('./utils/gameUtils');
+const fs = require('fs');
+const path = require('path');
 
 // Destructure the imported functions
 const { generateGrid, generateUniqueGrid, getUnmarkedNumbers, generateUniquePlayerGrid } = gameUtils;
@@ -502,6 +504,338 @@ function cleanupExpiredRoom(roomCode) {
   return false;
 }
 
+// Add persistent storage for games
+const fs = require('fs');
+const path = require('path');
+
+// Define storage paths
+const STORAGE_DIR = path.join(__dirname, 'storage');
+const GAMES_FILE = path.join(STORAGE_DIR, 'games.json');
+
+// Ensure storage directory exists
+if (!fs.existsSync(STORAGE_DIR)) {
+  fs.mkdirSync(STORAGE_DIR, { recursive: true });
+}
+
+// Load games from persistent storage
+function loadGames() {
+  try {
+    if (fs.existsSync(GAMES_FILE)) {
+      const data = fs.readFileSync(GAMES_FILE, 'utf8');
+      const loadedGames = JSON.parse(data);
+      
+      // Convert markedNumbers back to Set
+      for (const roomCode in loadedGames) {
+        if (loadedGames[roomCode].markedNumbers) {
+          loadedGames[roomCode].markedNumbers = new Set(loadedGames[roomCode].markedNumbers);
+        }
+        if (loadedGames[roomCode].usedGrids) {
+          loadedGames[roomCode].usedGrids = new Set(loadedGames[roomCode].usedGrids);
+        }
+      }
+      
+      return loadedGames;
+    }
+  } catch (error) {
+    console.error('Error loading games from storage:', error);
+  }
+  return {};
+}
+
+// Save games to persistent storage
+function saveGames() {
+  try {
+    const gamesToSave = { ...games };
+    
+    // Convert Sets to Arrays for JSON serialization
+    for (const roomCode in gamesToSave) {
+      if (gamesToSave[roomCode].markedNumbers) {
+        gamesToSave[roomCode].markedNumbers = Array.from(gamesToSave[roomCode].markedNumbers);
+      }
+      if (gamesToSave[roomCode].usedGrids) {
+        gamesToSave[roomCode].usedGrids = Array.from(gamesToSave[roomCode].usedGrids);
+      }
+    }
+    
+    fs.writeFileSync(GAMES_FILE, JSON.stringify(gamesToSave, null, 2));
+  } catch (error) {
+    console.error('Error saving games to storage:', error);
+  }
+}
+
+// Initialize games from storage
+Object.assign(games, loadGames());
+
+// Add periodic game state saving
+setInterval(saveGames, 60000); // Save every minute
+
+// Add backup system
+const BACKUP_DIR = path.join(STORAGE_DIR, 'backups');
+const MAX_BACKUPS = 5;
+
+// Ensure backup directory exists
+if (!fs.existsSync(BACKUP_DIR)) {
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+}
+
+// Create backup of games state
+function createBackup() {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupFile = path.join(BACKUP_DIR, `games_backup_${timestamp}.json`);
+    
+    const gamesToBackup = { ...games };
+    
+    // Convert Sets to Arrays for JSON serialization
+    for (const roomCode in gamesToBackup) {
+      if (gamesToBackup[roomCode].markedNumbers) {
+        gamesToBackup[roomCode].markedNumbers = Array.from(gamesToBackup[roomCode].markedNumbers);
+      }
+      if (gamesToBackup[roomCode].usedGrids) {
+        gamesToBackup[roomCode].usedGrids = Array.from(gamesToBackup[roomCode].usedGrids);
+      }
+    }
+    
+    fs.writeFileSync(backupFile, JSON.stringify(gamesToBackup, null, 2));
+    
+    // Clean up old backups
+    const backups = fs.readdirSync(BACKUP_DIR)
+      .filter(file => file.startsWith('games_backup_'))
+      .map(file => ({
+        name: file,
+        time: fs.statSync(path.join(BACKUP_DIR, file)).mtime.getTime()
+      }))
+      .sort((a, b) => b.time - a.time);
+    
+    // Remove excess backups
+    backups.slice(MAX_BACKUPS).forEach(backup => {
+      fs.unlinkSync(path.join(BACKUP_DIR, backup.name));
+    });
+    
+    console.log(`Created backup at ${timestamp}`);
+  } catch (error) {
+    console.error('Error creating backup:', error);
+  }
+}
+
+// Restore from backup
+function restoreFromBackup() {
+  try {
+    const backups = fs.readdirSync(BACKUP_DIR)
+      .filter(file => file.startsWith('games_backup_'))
+      .map(file => ({
+        name: file,
+        time: fs.statSync(path.join(BACKUP_DIR, file)).mtime.getTime()
+      }))
+      .sort((a, b) => b.time - a.time);
+    
+    if (backups.length === 0) {
+      console.log('No backups found');
+      return false;
+    }
+    
+    const latestBackup = backups[0];
+    const backupData = fs.readFileSync(path.join(BACKUP_DIR, latestBackup.name), 'utf8');
+    const restoredGames = JSON.parse(backupData);
+    
+    // Convert Arrays back to Sets
+    for (const roomCode in restoredGames) {
+      if (restoredGames[roomCode].markedNumbers) {
+        restoredGames[roomCode].markedNumbers = new Set(restoredGames[roomCode].markedNumbers);
+      }
+      if (restoredGames[roomCode].usedGrids) {
+        restoredGames[roomCode].usedGrids = new Set(restoredGames[roomCode].usedGrids);
+      }
+    }
+    
+    // Update games object
+    Object.assign(games, restoredGames);
+    
+    console.log(`Restored from backup ${latestBackup.name}`);
+    return true;
+  } catch (error) {
+    console.error('Error restoring from backup:', error);
+    return false;
+  }
+}
+
+// Add periodic backups
+setInterval(createBackup, 5 * 60 * 1000); // Create backup every 5 minutes
+
+// Modify the recoverRoomState function to try backups
+function recoverRoomState(roomCode) {
+  console.log(`Attempting to recover room state for ${roomCode}`);
+  
+  // Try to load from persistent storage first
+  const storedGames = loadGames();
+  if (storedGames[roomCode]) {
+    console.log(`Found room ${roomCode} in persistent storage, restoring...`);
+    games[roomCode] = storedGames[roomCode];
+    return true;
+  }
+  
+  // If not found in storage, try to restore from backup
+  if (restoreFromBackup()) {
+    if (games[roomCode]) {
+      console.log(`Found room ${roomCode} in backup, restoring...`);
+      return true;
+    }
+  }
+  
+  // If still not found, try to reconstruct from active connections
+  const activeGame = {
+    roomCode,
+    gridSize: '5x5',
+    players: [],
+    grids: {},
+    playerNumbers: {},
+    started: false,
+    startTime: null,
+    turnIndex: 0,
+    turnDuration: 15000,
+    markedNumbers: new Set(),
+    lastMarkedNumber: undefined,
+    lastMarkedTurn: -1,
+    createdAt: Date.now(),
+    lastActive: Date.now(),
+    hostUsername: null,
+    usedGrids: new Set(),
+    readyPlayers: []
+  };
+  
+  // Find all sockets in this room
+  const roomSockets = Array.from(io.sockets.adapter.rooms.get(roomCode) || []);
+  
+  for (const socketId of roomSockets) {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket && socket.data.roomCode === roomCode) {
+      const player = {
+        id: socketId,
+        username: socket.data.username,
+        joinedAt: Date.now()
+      };
+      activeGame.players.push(player);
+      
+      if (!activeGame.hostUsername) {
+        activeGame.hostUsername = player.username;
+      }
+    }
+  }
+  
+  if (activeGame.players.length > 0) {
+    console.log(`Recovered room ${roomCode} with ${activeGame.players.length} players`);
+    games[roomCode] = activeGame;
+    saveGames();
+    createBackup(); // Create backup after successful recovery
+    return true;
+  }
+  
+  return false;
+}
+
+// Add room state validation function
+function validateRoomState(roomCode) {
+  const game = games[roomCode];
+  if (!game) return false;
+  
+  // Check required properties
+  const requiredProps = [
+    'roomCode', 'gridSize', 'players', 'grids', 'playerNumbers',
+    'started', 'turnIndex', 'turnDuration', 'markedNumbers',
+    'createdAt', 'lastActive', 'hostUsername', 'usedGrids', 'readyPlayers'
+  ];
+  
+  for (const prop of requiredProps) {
+    if (!(prop in game)) {
+      console.error(`Invalid room state: missing ${prop} in room ${roomCode}`);
+      return false;
+    }
+  }
+  
+  // Validate players array
+  if (!Array.isArray(game.players)) {
+    console.error(`Invalid room state: players is not an array in room ${roomCode}`);
+    return false;
+  }
+  
+  // Validate grids object
+  if (typeof game.grids !== 'object' || game.grids === null) {
+    console.error(`Invalid room state: grids is not an object in room ${roomCode}`);
+    return false;
+  }
+  
+  // Validate markedNumbers is a Set
+  if (!(game.markedNumbers instanceof Set)) {
+    console.error(`Invalid room state: markedNumbers is not a Set in room ${roomCode}`);
+    return false;
+  }
+  
+  return true;
+}
+
+// Add room state repair function
+function repairRoomState(roomCode) {
+  console.log(`Attempting to repair room state for ${roomCode}`);
+  const game = games[roomCode];
+  if (!game) return false;
+  
+  try {
+    // Ensure all required properties exist with default values
+    const defaultState = {
+      roomCode,
+      gridSize: game.gridSize || '5x5',
+      players: Array.isArray(game.players) ? game.players : [],
+      grids: typeof game.grids === 'object' ? game.grids : {},
+      playerNumbers: typeof game.playerNumbers === 'object' ? game.playerNumbers : {},
+      started: Boolean(game.started),
+      startTime: game.startTime || null,
+      turnIndex: Number(game.turnIndex) || 0,
+      turnDuration: Number(game.turnDuration) || 15000,
+      markedNumbers: game.markedNumbers instanceof Set ? game.markedNumbers : new Set(),
+      lastMarkedNumber: game.lastMarkedNumber,
+      lastMarkedTurn: Number(game.lastMarkedTurn) || -1,
+      createdAt: Number(game.createdAt) || Date.now(),
+      lastActive: Number(game.lastActive) || Date.now(),
+      hostUsername: game.hostUsername || game.players[0]?.username || null,
+      usedGrids: game.usedGrids instanceof Set ? game.usedGrids : new Set(),
+      readyPlayers: Array.isArray(game.readyPlayers) ? game.readyPlayers : []
+    };
+    
+    // Update the game object
+    Object.assign(game, defaultState);
+    
+    // Validate player data
+    game.players = game.players.filter(player => {
+      return player && 
+             typeof player.id === 'string' && 
+             typeof player.username === 'string' &&
+             player.id.length > 0 &&
+             player.username.length > 0;
+    });
+    
+    // Clean up invalid grids
+    for (const playerId in game.grids) {
+      if (!game.players.some(p => p.id === playerId)) {
+        delete game.grids[playerId];
+      }
+    }
+    
+    // Ensure host exists
+    if (!game.hostUsername && game.players.length > 0) {
+      game.hostUsername = game.players[0].username;
+    }
+    
+    // Save the repaired state
+    saveGames();
+    
+    console.log(`Successfully repaired room state for ${roomCode}`);
+    return true;
+  } catch (error) {
+    console.error(`Error repairing room state for ${roomCode}:`, error);
+    return false;
+  }
+}
+
 // Socket.io logic
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
@@ -683,23 +1017,50 @@ io.on('connection', (socket) => {
         return;
       }
       
+      // Store room code and username in socket data
+      socket.data.roomCode = roomCode;
+      socket.data.username = username;
+      
       // Log current active games for debugging
       console.log('Current active games:', Object.keys(games));
       
       // Check if room exists and clean up if expired
       const wasExpired = cleanupExpiredRoom(roomCode);
-      const game = games[roomCode];
+      let game = games[roomCode];
       
+      // If room not found, try to recover it
       if (!game) {
-        console.log(`Room not found: ${roomCode}. Available rooms: ${Object.keys(games).join(', ')}`);
-        socket.emit('join-error', { 
-          message: 'Room not found',
-          details: wasExpired 
-            ? 'This room has expired due to inactivity. Please create a new game.'
-            : 'The room you are trying to join does not exist. Please check the room code and try again.',
-          availableRooms: Object.keys(games)
-        });
-        return;
+        console.log(`Room ${roomCode} not found, attempting recovery...`);
+        if (recoverRoomState(roomCode)) {
+          game = games[roomCode];
+          console.log(`Successfully recovered room ${roomCode}`);
+        } else {
+          console.log(`Room ${roomCode} could not be recovered`);
+          socket.emit('join-error', { 
+            message: 'Room not found',
+            details: wasExpired 
+              ? 'This room has expired due to inactivity. Please create a new game.'
+              : 'The room you are trying to join does not exist. Please check the room code and try again.',
+            availableRooms: Object.keys(games)
+          });
+          return;
+        }
+      }
+      
+      // Validate and repair room state if necessary
+      if (!validateRoomState(roomCode)) {
+        console.log(`Room state invalid for ${roomCode}, attempting repair...`);
+        if (repairRoomState(roomCode)) {
+          game = games[roomCode];
+          console.log(`Successfully repaired room state for ${roomCode}`);
+        } else {
+          console.error(`Failed to repair room state for ${roomCode}`);
+          socket.emit('join-error', {
+            message: 'Room state corrupted',
+            details: 'The room state is corrupted and cannot be repaired. Please create a new game.'
+          });
+          return;
+        }
       }
       
       // Validate game object
