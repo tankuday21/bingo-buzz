@@ -753,7 +753,13 @@ function validateRoomState(roomCode) {
     console.error(`Invalid room state: markedNumbers is not a Set in room ${roomCode}`);
     return false;
   }
-  
+
+  // Validate usedGrids is a Set
+  if (!(game.usedGrids instanceof Set)) {
+    console.error(`Invalid room state: usedGrids is not a Set in room ${roomCode}`);
+    return false;
+  }
+
   return true;
 }
 
@@ -834,8 +840,8 @@ function repairRoomState(game) {
       game.lastActive = Date.now();
     }
     
-    // Save the repaired state
-    saveGames();
+    // Save the repaired state - Removed, will be handled by periodic save
+    // saveGames();
     
     console.log('Successfully repaired room state for', game.roomCode);
     return true;
