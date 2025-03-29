@@ -693,10 +693,15 @@ const GamePage = () => {
     toast.error(message); // Show user-friendly error
     setGameMessage(message);
     console.log('[handleError] Attempting to set isMarking to false due to error.');
-    console.log(`[handleError] isMarkingRef.current BEFORE setIsMarking(false): ${isMarkingRef.current}`);
+    // Check ref value right before direct set & state change
+    console.log(`[handleError] isMarkingRef.current BEFORE direct set & setIsMarking(false): ${isMarkingRef.current}`);
     // If the error might be related to an invalid action (like marking), release the lock
-    // You might want more specific error checks depending on server error messages
+    // --- Try direct ref update FIRST ---
+    isMarkingRef.current = false; 
+    // --- Now set state ---
     setIsMarking(false); // <<< Release lock on error
+    // Log ref value after direct set & state change
+    console.log(`[handleError] Successfully called setIsMarking(false). Ref is now: ${isMarkingRef.current}`);
   };
   
   // Handle exiting the game and returning to home page
