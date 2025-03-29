@@ -1372,17 +1372,26 @@ io.on('connection', (socket) => {
         game.timer = null;
       }
       
-      // ** Explicitly confirm to the sender first **
-      console.log(`[mark-number] Emitting direct confirmation to sender ${socket.id} for number ${number}`);
-      socket.emit('number-marked', {
+      // ** Explicitly confirm to the sender first - with extra logging **
+      const confirmationPayload = {
         number: number,
         markedBy: socket.id,
         automatic: false
-      });
-      
+      };
+      try {
+        console.log(`[mark-number] PRE-EMIT: Attempting direct emit of number-marked to ${socket.id} with payload:`, confirmationPayload);
+        socket.emit('number-marked', confirmationPayload);
+        console.log(`[mark-number] POST-EMIT: Successfully executed emit direct confirmation to ${socket.id}`);
+      } catch (emitError) {
+        // This catch block might not catch low-level network errors, but catches sync errors during emit setup.
+        console.error(`[mark-number] CRITICAL: Error occurred DURING socket.emit to ${socket.id}:`, emitError);
+        // Attempt to notify the client about this specific failure
+        try { socket.emit('error', 'Server failed during confirmation emit'); } catch(e) { console.error("Failed even to emit the emit error", e); }
+      }
+
       // Notify OTHER players in the room
       // Using socket.broadcast.to sends to everyone in the room EXCEPT the sender
-      console.log(`[mark-number] Broadcasting to room ${roomCode} (excluding sender) for number ${number}`);
+      console.log(`[mark-number] Broadcasting number-marked to room ${roomCode} (excluding sender) for number ${number}`);
       socket.broadcast.to(roomCode).emit('number-marked', {
         number: number,
         markedBy: socket.id,
@@ -1429,8 +1438,15 @@ io.on('connection', (socket) => {
         startTurn(roomCode);
       }
     } catch (error) {
-      console.error('Error handling mark-number:', error);
-      socket.emit('error', 'Server error processing your move');
+      // This is the catch block for the broader handler logic (validations, state updates etc.)
+      console.error('[mark-number] Error in main handler logic:', error);
+      // Ensure error is emitted back to sender if caught here
+      try { 
+        socket.emit('error', 'Server error processing your move'); 
+        console.log(`[mark-number] Emitted general server error to ${socket.id}`);
+      } catch (e) { 
+        console.error("[mark-number] Failed to emit general server error to client", e);
+      }
     }
   });
   
@@ -1491,7 +1507,7 @@ io.on('connection', (socket) => {
             automatic: true
           });
           
-          // Check for winner after automatic marking
+          // Check for a winner
           const winner = checkWinUtils(game);
           if (winner) {
             const winningPlayer = game.players.find(p => p.id === winner.playerId);
