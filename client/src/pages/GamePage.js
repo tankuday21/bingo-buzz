@@ -161,6 +161,12 @@ const GamePage = () => {
     socket.on('player-ready', handlePlayerReady);
     socket.on('sync-marked-numbers', handleSyncMarkedNumbers);
     
+    // Add catch-all listener for debugging
+    const handleAnyEvent = (eventName, ...args) => {
+      console.log(`[Socket Received Event - DEBUG] Event: ${eventName}, Args:`, args);
+    };
+    socket.onAny(handleAnyEvent);
+    
     // Clean up on unmount
     return () => {
       socket.off('grid-assigned', handleGridAssigned);
@@ -175,6 +181,8 @@ const GamePage = () => {
       socket.off('error', handleError);
       socket.off('player-ready', handlePlayerReady);
       socket.off('sync-marked-numbers', handleSyncMarkedNumbers);
+      // Remove the catch-all listener
+      socket.offAny(handleAnyEvent);
       clearInterval(timerIntervalRef.current);
       hasJoinedRef.current = false;
       setIsGridReady(false);
