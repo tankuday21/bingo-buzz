@@ -266,6 +266,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// Add generateRoomCode function
+function generateRoomCode() {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return code;
+}
+
 // API Routes
 app.post('/api/games', async (req, res) => {
   try {
@@ -276,6 +286,14 @@ app.post('/api/games', async (req, res) => {
       return res.status(400).json({ 
         error: 'Username is required',
         details: 'Please provide a username when creating a game'
+      });
+    }
+    
+    // Validate grid size
+    if (!gridSize || !/^\d+x\d+$/.test(gridSize)) {
+      return res.status(400).json({
+        error: 'Invalid grid size',
+        details: 'Grid size must be in the format "NxN" (e.g., "5x5")'
       });
     }
     
@@ -349,7 +367,7 @@ app.post('/api/games', async (req, res) => {
     console.error('Error creating game:', error);
     res.status(500).json({ 
       error: 'Internal server error',
-      details: error.message
+      details: error.message || 'An unexpected error occurred while creating the game'
     });
   }
 });
