@@ -50,6 +50,7 @@ const GamePage = () => {
   // State for tracking if a number is being marked (to prevent multiple clicks)
   const [isMarking, setIsMarking] = useState(false);
   const isMarkingRef = useRef(isMarking); // <<< Add ref for isMarking
+  const turnCheckLog = useRef(''); // Ref to store log value
   
   // Refs
   const timerIntervalRef = useRef(null);
@@ -112,7 +113,7 @@ const GamePage = () => {
   useEffect(() => {
     isMarkingRef.current = isMarking;
     // Optional: Add debug log if needed
-    // if (DEBUG) console.log(`[Effect] isMarking state changed to: ${isMarking}, updated ref.`);
+    console.log(`[Effect] isMarking state changed to: ${isMarking}. Ref updated.`);
   }, [isMarking]);
   
   // Join game on mount
@@ -421,7 +422,9 @@ const GamePage = () => {
       });
       // ** Call setIsMarking(false) directly AFTER the setGrid call **
       console.log('[handleNumberMarked] Attempting to set isMarking to false.');
-      setIsMarking(false); 
+      // Check ref value right before setting state
+      console.log(`[handleNumberMarked] isMarkingRef.current BEFORE setIsMarking(false): ${isMarkingRef.current}`);
+      setIsMarking(false);
       console.log('[handleNumberMarked] Successfully called setIsMarking(false).');
     } else {
       // Grid is not ready, queue the number
@@ -433,12 +436,14 @@ const GamePage = () => {
        // Even if queued, we should probably release the lock as the server won't confirm this specific action now.
       // Also release lock here if grid wasn't ready
       console.log('[handleNumberMarked - Grid Not Ready] Attempting to set isMarking to false.');
-      setIsMarking(false); 
+      // Check ref value right before setting state
+      console.log(`[handleNumberMarked - Grid Not Ready] isMarkingRef.current BEFORE setIsMarking(false): ${isMarkingRef.current}`);
+      setIsMarking(false);
       console.log('[handleNumberMarked - Grid Not Ready] Successfully called setIsMarking(false).');
     }
   // Keep grid dependency for useCallback, even though we access latest via setGrid now.
   // This ensures the callback reference updates if grid reference changes, which is still correct.
-  }, [grid]); 
+  }, [grid, markedHistory]); 
 
   // Handle receiving a full sync of marked numbers
   const handleSyncMarkedNumbers = useCallback(({ markedNumbers }) => {
@@ -462,7 +467,7 @@ const GamePage = () => {
         console.error('[handleSyncMarkedNumbers] Received invalid markedNumbers data:', markedNumbers);
     }
   // Keep grid dependency for useCallback
-  }, [grid]); 
+  }, [grid, markedHistory]); 
   
   // Fix player mapping in the waiting room section
   const normalizePlayer = (player) => {
@@ -681,7 +686,8 @@ const GamePage = () => {
     console.error('Game error:', message);
     toast.error(message); // Show user-friendly error
     setGameMessage(message);
-
+    console.log('[handleError] Attempting to set isMarking to false due to error.');
+    console.log(`[handleError] isMarkingRef.current BEFORE setIsMarking(false): ${isMarkingRef.current}`);
     // If the error might be related to an invalid action (like marking), release the lock
     // You might want more specific error checks depending on server error messages
     setIsMarking(false); // <<< Release lock on error
@@ -758,18 +764,21 @@ const GamePage = () => {
   
   // Handle marking a number
   const handleMarkNumber = useCallback((cellIndex, number) => {
+    // Log state values AT THE MOMENT this callback is invoked
+    turnCheckLog.current = `handleMarkNumber invoked. isMyTurn: ${isMyTurn}, gameStarted: ${gameStarted}, isMarkingRef.current: ${isMarkingRef.current}`;
+    console.log(turnCheckLog.current);
+
     // <<< Use the isMarkingRef for the check >>>
     if (!isMyTurn || !gameStarted || isMarkingRef.current) {
       console.log('Cannot mark number:', { isMyTurn, gameStarted, isMarking: isMarkingRef.current }); // Log ref value
       // Do not proceed if conditions aren't met
       // If isMarking is true, it means a mark attempt is already in progress.
-      if (isMarkingRef.current) { // Check ref here too
-        toast.error("Please wait for the previous action to complete.");
-      }
+      if (isMarkingRef.current) toast.error("Please wait for the previous action to complete.");
       return;
     }
     
     console.log(`Attempting to mark number ${number} at index ${cellIndex}`);
+    console.log(`[handleMarkNumber] PRE setIsMarking(true). Current ref value: ${isMarkingRef.current}`);
     setIsMarking(true); // <<< Still use state setter here to trigger update & effect
     
     // Add specific log before emitting
