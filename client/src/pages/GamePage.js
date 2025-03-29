@@ -398,6 +398,7 @@ const GamePage = () => {
       setGrid(currentGrid => { 
         // Now we are guaranteed to have the most up-to-date grid
         processMarkedNumbers([number], currentGrid);
+        setIsMarking(false); // <<< Release the lock AFTER successful processing
         return currentGrid; // Important: return the grid state unchanged
       });
     } else {
@@ -407,6 +408,8 @@ const GamePage = () => {
       if (!pendingMarkedNumbersRef.current.includes(number)) {
           pendingMarkedNumbersRef.current.push(number);
       }
+       // Even if queued, we should probably release the lock as the server won't confirm this specific action now.
+      setIsMarking(false); // <<< Release lock if grid wasn't ready during processing
     }
   // Keep grid dependency for useCallback, even though we access latest via setGrid now.
   // This ensures the callback reference updates if grid reference changes, which is still correct.
@@ -651,8 +654,12 @@ const GamePage = () => {
   
   const handleError = (message) => {
     console.error('Game error:', message);
-    toast.error(message);
+    toast.error(message); // Show user-friendly error
     setGameMessage(message);
+
+    // If the error might be related to an invalid action (like marking), release the lock
+    // You might want more specific error checks depending on server error messages
+    setIsMarking(false); // <<< Release lock on error
   };
   
   // Handle exiting the game and returning to home page
@@ -728,12 +735,19 @@ const GamePage = () => {
   const handleMarkNumber = useCallback((cellIndex, number) => {
     if (!isMyTurn || !gameStarted || isMarking) {
       console.log('Cannot mark number:', { isMyTurn, gameStarted, isMarking });
+      // Do not proceed if conditions aren't met
+      // If isMarking is true, it means a mark attempt is already in progress.
+      if (isMarking) {
+        toast.error("Please wait for the previous action to complete.");
+      }
       return;
     }
     
     console.log(`Attempting to mark number ${number} at index ${cellIndex}`);
-    setIsMarking(true); // Prevent double clicks
+    setIsMarking(true); // <<< Set lock immediately
     
+    // Add specific log before emitting
+    console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
     // Emit mark-number event to the server
     socket.emit('mark-number', { 
       roomCode, 
@@ -741,14 +755,11 @@ const GamePage = () => {
       cellIndex 
     });
 
-    // Add optimistic update (optional but can improve perceived performance)
+    // Remove the optimistic update and the timeout
     // setMarkedCells(prev => [...prev, cellIndex]); 
-
-    // Re-enable marking after a short delay to prevent spam/accidental double clicks
-    // and allow server confirmation to arrive.
-    setTimeout(() => {
-      setIsMarking(false);
-    }, 500); // Adjust delay as needed
+    // setTimeout(() => {
+    //   setIsMarking(false);
+    // }, 500); 
 
   }, [isMyTurn, gameStarted, roomCode, isMarking]); // Added isMarking
   
