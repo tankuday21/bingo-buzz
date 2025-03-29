@@ -1,7 +1,7 @@
 import React, { useContext } from 'react';
 import { ThemeContext } from '../context/ThemeContext';
 
-const PlayersList = ({ players, currentTurn, winner }) => {
+const PlayersList = React.memo(({ players, currentTurn, winner }) => {
   const { theme } = useContext(ThemeContext);
 
   // Helper function to get username from player object or string
@@ -92,6 +92,6 @@ const PlayersList = ({ players, currentTurn, winner }) => {
       })}
     </div>
   );
-};
+});
 
 export default PlayersList;

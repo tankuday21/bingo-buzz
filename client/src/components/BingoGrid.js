@@ -19,7 +19,7 @@ const emojiMap = {
   61: '🐻', 62: '🐨', 63: '🦊', 64: '🦋'
 };
 
-const BingoGrid = ({ 
+const BingoGrid = React.memo(({ 
   grid, 
   onCellClick, 
   markedCells, 
@@ -181,6 +181,6 @@ const BingoGrid = ({
       </div>
     </motion.div>
   );
-};
+});
 
 export default BingoGrid;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
@@ -714,25 +714,30 @@ const GamePage = () => {
   };
   
   // Toggle ready status
-  const handleToggleReady = () => {
-    const newReadyStatus = !isReady;
-    setIsReady(newReadyStatus);
-    console.log(`Setting ready status to ${newReadyStatus} for ${username} in room ${roomCode}`);
-    socket.emit('toggle-ready', { roomCode, username, isReady: newReadyStatus });
-  };
-  
-  // Start the game (host only)
-  const handleStartGame = () => {
-    if (!isHost) return;
-    
-    // Check if enough players are ready
-    if (readyPlayers.length < 1) {
-      toast.error('Not enough players are ready to start the game');
+  const handleToggleReady = useCallback(() => {
+    if (!socket.connected) {
+      toast.error('Not connected to server.');
       return;
     }
-    
-    socket.emit('start-game', { roomCode });
-  };
+    const newState = !isReady;
+    setIsReady(newState);
+    socket.emit('player-ready', { roomCode, isReady: newState });
+  }, [isReady, roomCode]);
+  
+  // Start the game (host only)
+  const handleStartGame = useCallback(() => {
+    if (!socket.connected) {
+      toast.error('Not connected to server.');
+      return;
+    }
+    // Add check: only host can start, and only if enough players are ready
+    // (This check might be better enforced on the server too)
+    if (isHost) { 
+      socket.emit('start-game', { roomCode });
+    } else {
+      toast.error('Only the host can start the game.');
+    }
+  }, [isHost, roomCode]);
   
   // Copy room code to clipboard
   const handleCopyRoomCode = () => {
@@ -744,75 +749,32 @@ const GamePage = () => {
   };
   
   // Handle marking a number
-  const handleMarkNumber = (cellIndex, number) => {
-    console.log('Attempting to mark number:', number, 'at index:', cellIndex);
-    
-    // Check if the game has started and it's my turn
-    if (!gameStarted) {
-      console.log('Game not started yet');
+  const handleMarkNumber = useCallback((cellIndex, number) => {
+    if (!isMyTurn || !gameStarted || isMarking) {
+      console.log('Cannot mark number:', { isMyTurn, gameStarted, isMarking });
       return;
     }
     
-    if (!isMyTurn) {
-      console.log('Not my turn');
-      return;
-    }
+    console.log(`Attempting to mark number ${number} at index ${cellIndex}`);
+    setIsMarking(true); // Prevent double clicks
     
-    if (winner) {
-      console.log('Game already has a winner');
-      return;
-    }
-    
-    // Check if we're already marking a cell (to prevent double clicks)
-    if (isMarking) {
-      console.log('Already processing a mark');
-      return;
-    }
-    
-    // Make sure number is valid
-    let numberToMark = number;
-    if (!numberToMark && grid && grid.length > 0) {
-      const flatGrid = Array.isArray(grid[0]) ? grid.flat() : grid;
-      numberToMark = flatGrid[cellIndex];
-    }
-    
-    // Convert to integer if it's a string
-    if (typeof numberToMark === 'string') {
-      numberToMark = parseInt(numberToMark, 10);
-    }
-    
-    if (!numberToMark || isNaN(numberToMark)) {
-      console.error('No valid number found at index', cellIndex);
-      return;
-    }
-    
-    console.log('Marking number:', numberToMark, 'at index:', cellIndex);
-    
-    // Update UI immediately for better responsiveness
-    if (!markedCells.includes(cellIndex)) {
-      setMarkedCells(prev => [...prev, cellIndex]);
-    }
-    
-    // Set marking flag to prevent multiple clicks
-    setIsMarking(true);
-    
-    // Log the exact data being sent to the server for debugging
-    console.log('Sending mark-number event with data:', {
-      roomCode,
-      number: numberToMark
+    // Emit mark-number event to the server
+    socket.emit('mark-number', { 
+      roomCode, 
+      number, 
+      cellIndex 
     });
-    
-    // Send the mark to the server - only send the number, not the cellIndex
-    socket.emit('mark-number', {
-      roomCode,
-      number: numberToMark
-    });
-    
-    // Clear marking flag after a short delay
+
+    // Add optimistic update (optional but can improve perceived performance)
+    // setMarkedCells(prev => [...prev, cellIndex]); 
+
+    // Re-enable marking after a short delay to prevent spam/accidental double clicks
+    // and allow server confirmation to arrive.
     setTimeout(() => {
       setIsMarking(false);
-    }, 500);
-  };
+    }, 500); // Adjust delay as needed
+
+  }, [isMyTurn, gameStarted, roomCode, isMarking]); // Added isMarking
   
   // Add connection status indicator to UI
   const ConnectionStatus = () => (
