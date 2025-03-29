@@ -6,7 +6,11 @@ const { nanoid } = require('nanoid');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const LeaderboardModel = require('./models/leaderboard');
-const { generateGrid, generateUniqueGrid, checkWin as checkWinUtils, getUnmarkedNumbers, generateUniquePlayerGrid } = require('./utils/gameUtils');
+const gameUtils = require('./utils/gameUtils');
+
+// Destructure the imported functions
+const { generateGrid, generateUniqueGrid, getUnmarkedNumbers, generateUniquePlayerGrid } = gameUtils;
+const checkWinUtils = gameUtils.checkWin;
 
 // Load environment variables
 dotenv.config();
