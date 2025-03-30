@@ -1067,6 +1067,7 @@ const GamePage = () => {
                       markedCells={markedCells}
                       winningLines={winningLines}
                       isInteractionDisabled={isMarking}
+                      isMyTurn={isMyTurn}
                     />
                   </div>
                 </div>

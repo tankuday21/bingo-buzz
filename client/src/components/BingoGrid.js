@@ -24,7 +24,8 @@ const BingoGrid = React.memo(({
   onCellClick, 
   markedCells, 
   winningLines,
-  isInteractionDisabled
+  isInteractionDisabled,
+  isMyTurn
 }) => {
   const { theme } = useContext(ThemeContext);
   const gridSize = grid?.length || 5;
@@ -51,6 +52,9 @@ const BingoGrid = React.memo(({
   };
 
   const getCellStyle = (index) => {
+    // Determine final disabled state
+    const isDisabled = isInteractionDisabled || !isMyTurn;
+
     const baseStyle = {
       backgroundColor: theme.colors.card,
       color: theme.colors.text,
@@ -80,8 +84,7 @@ const BingoGrid = React.memo(({
     // Check if this cell is part of a winning line
     const isWinningCell = Array.isArray(winningLines) && winningLines.includes(index);
     
-    // Check if interaction is disabled
-    if (isInteractionDisabled) {
+    if (isDisabled) {
       return {
         ...baseStyle,
         opacity: 0.6,
@@ -140,8 +143,6 @@ const BingoGrid = React.memo(({
 
   // Cell click handler
   const handleCellClick = (number, index) => {
-    // Prevent click if interaction is disabled
-    if (isInteractionDisabled) return;
     if (typeof onCellClick === 'function') {
       // Pass the cell index first, then the number to the parent component
       onCellClick(index, number);
@@ -176,20 +177,25 @@ const BingoGrid = React.memo(({
           margin: '0 auto'
         }}
       >
-        {flatGrid.map((number, index) => (
-          <motion.button
-            key={index}
-            variants={cellVariants}
-            onClick={() => handleCellClick(number, index)}
-            style={getCellStyle(index)}
-            whileHover={isInteractionDisabled ? {} : cellHoverAnimation}
-            whileTap={isInteractionDisabled ? {} : cellTapAnimation}
-            data-number={number}
-            data-index={index}
-          >
-            {number}
-          </motion.button>
-        ))}
+        {flatGrid.map((number, index) => {
+          // Determine final disabled state for this cell render
+          const isDisabled = isInteractionDisabled || !isMyTurn;
+          return (
+            <motion.button
+              key={index}
+              variants={cellVariants}
+              onClick={isDisabled ? () => {} : () => handleCellClick(number, index)}
+              style={getCellStyle(index)}
+              whileHover={isDisabled ? {} : cellHoverAnimation}
+              whileTap={isDisabled ? {} : cellTapAnimation}
+              data-number={number}
+              data-index={index}
+              aria-disabled={isDisabled}
+            >
+              {number}
+            </motion.button>
+          );
+        })}
       </div>
     </motion.div>
   );
