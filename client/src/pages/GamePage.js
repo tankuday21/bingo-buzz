@@ -835,6 +835,122 @@ const GamePage = () => {
     </div>
   );
   
+  // Effect for Socket Listeners
+  useEffect(() => {
+    if (!socket) return;
+
+    console.log('[Effect: Socket Listeners] Setting up listeners...');
+
+    // Handler for successful connection/reconnection
+    const handleConnect = () => {
+      console.log('Socket connected:', socket.id);
+      setSocketConnected(true);
+      setConnectionStatus('Connected');
+      // Attempt to re-join the room automatically on connect/reconnect
+      if (roomCode && username) {
+        console.log(`[Socket Connect] Attempting to re-join room ${roomCode} as ${username}`);
+        socket.emit('join-room', { roomCode, username }, (response) => {
+          // This callback might receive initial game state from server upon successful rejoin
+          if (response?.status === 'success') {
+            console.log('[Socket Rejoin Callback] Successfully rejoined room. Response:', response);
+            // Optionally handle initial state sync received in response here
+            if (response.gameState) {
+              // Example: sync state if server sends it on rejoin
+              // handleGameStateUpdate(response.gameState); 
+            }
+          } else {
+            console.error('[Socket Rejoin Callback] Failed to rejoin room:', response?.message);
+            // Handle potential errors, e.g., navigate back or show error
+            toast.error(`Failed to rejoin room: ${response?.message || 'Unknown error'}`);
+          }
+        });
+      }
+    };
+
+    // Handler for disconnection
+    const handleDisconnect = (reason) => {
+      console.warn('Socket disconnected:', reason);
+      setSocketConnected(false);
+      setConnectionStatus(`Disconnected: ${reason}. Attempting to reconnect...`);
+      // Reset states that depend on persistent connection or turn status?
+      // setIsMyTurn(false); // Maybe reset turn status on disconnect?
+      // toast.info('Connection lost. Attempting to reconnect...');
+    };
+
+    // Add listeners
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('game-state', handleGameStateUpdate); // Use the consolidated handler
+    socket.on('assign-grid', handleGridAssigned);
+    socket.on('number-marked', handleNumberMarked); // Server should broadcast this
+    socket.on('turn-changed', handleTurnChanged);   // Server should broadcast this
+    socket.on('game-over', handleGameOver);
+    socket.on('game-error', handleError);
+    socket.on('player-joined', handlePlayerJoined);
+    socket.on('player-left', handlePlayerLeft);
+    socket.on('player-ready-update', handlePlayerReadyUpdate); 
+    socket.on('game-started', handleGameStarted);
+    socket.on('sync-marked-numbers', handleSyncMarkedNumbers); // Listen for full sync
+    socket.on('turn-started', handleTurnStarted);
+
+    // Special DEBUG listeners
+    socket.on('connect_error', (err) => {
+      console.error('Socket connection error:', err.message, err.data);
+      setConnectionStatus(`Connection Error: ${err.message}`);
+    });
+    socket.on('connect_timeout', () => {
+      console.error('Socket connection timeout');
+      setConnectionStatus('Connection Timeout');
+    });
+    socket.on('reconnect_attempt', (attempt) => {
+      console.log('Socket reconnect attempt:', attempt);
+      setConnectionStatus(`Reconnecting (Attempt ${attempt})...`);
+    });
+    socket.on('reconnect_error', (err) => {
+      console.error('Socket reconnect error:', err.message);
+      setConnectionStatus(`Reconnect Error: ${err.message}`);
+    });
+    socket.on('reconnect_failed', () => {
+      console.error('Socket reconnect failed permanently');
+      setConnectionStatus('Reconnect Failed');
+      toast.error('Could not reconnect to the server. Please refresh.');
+    });
+    socket.on('reconnect', (attempt) => {
+      console.log('Socket reconnected successfully on attempt:', attempt, 'New ID:', socket.id);
+      setConnectionStatus('Reconnected');
+      // Re-joining is handled by the 'connect' event handler now
+    });
+
+
+    // Cleanup function
+    return () => {
+      console.log('[Effect: Socket Listeners] Cleaning up listeners...');
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('game-state', handleGameStateUpdate);
+      socket.off('assign-grid', handleGridAssigned);
+      socket.off('number-marked', handleNumberMarked);
+      socket.off('turn-changed', handleTurnChanged);
+      socket.off('game-over', handleGameOver);
+      socket.off('game-error', handleError);
+      socket.off('player-joined', handlePlayerJoined);
+      socket.off('player-left', handlePlayerLeft);
+      socket.off('player-ready-update', handlePlayerReadyUpdate);
+      socket.off('game-started', handleGameStarted);
+      socket.off('sync-marked-numbers', handleSyncMarkedNumbers);
+      socket.off('turn-started', handleTurnStarted);
+
+      // Cleanup DEBUG listeners
+      socket.off('connect_error');
+      socket.off('connect_timeout');
+      socket.off('reconnect_attempt');
+      socket.off('reconnect_error');
+      socket.off('reconnect_failed');
+      socket.off('reconnect');
+    };
+  // Add roomCode and username as dependencies so rejoin logic has access to them
+  }, [socket, roomCode, username, handleGameStateUpdate, handleGridAssigned, handleNumberMarked, handleTurnChanged, handleGameOver, handleError, handlePlayerJoined, handlePlayerLeft, handlePlayerReadyUpdate, handleGameStarted, handleSyncMarkedNumbers, handleTurnStarted]);
+  
   return (
     <motion.div 
       className="min-h-screen py-8 px-4 relative overflow-hidden"
