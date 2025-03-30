@@ -366,7 +366,7 @@ const GamePage = () => {
     // Add guard clause for invalid grid early
     if (!currentGrid || !Array.isArray(currentGrid) || currentGrid.length === 0) {
         console.error("[processMarkedNumbers] Attempted to process numbers but grid is invalid or empty.", currentGrid);
-        return; 
+      return;
     }
     console.log('[processMarkedNumbers] Processing numbers:', numbers, 'with grid:', currentGrid);
     
@@ -714,10 +714,10 @@ const GamePage = () => {
   // Handle player ready state changes
   const handlePlayerReady = ({ username: readyUsername, readyPlayers }) => {
     console.log(`[Socket Event Received] Player ready update: ${readyUsername}, Ready players:`, readyPlayers);
-
+    
     if (Array.isArray(readyPlayers)) {
       setReadyPlayers(readyPlayers);
-
+      
       // Check if I'm the player who toggled ready status
       if (readyUsername === username) {
         const amIReady = readyPlayers.includes(username);
@@ -760,7 +760,7 @@ const GamePage = () => {
     // Add check: only host can start, and only if enough players are ready
     // (This check might be better enforced on the server too)
     if (isHost) { 
-      socket.emit('start-game', { roomCode });
+    socket.emit('start-game', { roomCode });
     } else {
       toast.error('Only the host can start the game.');
     }
@@ -805,8 +805,8 @@ const GamePage = () => {
       // Add specific log before emitting
       console.log(`[Debounced] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
       // Emit mark-number event to the server
-      socket.emit('mark-number', {
-        roomCode,
+    socket.emit('mark-number', {
+      roomCode,
         number,
         cellIndex
       });
@@ -1066,6 +1066,7 @@ const GamePage = () => {
                       onCellClick={handleMarkNumber}
                       markedCells={markedCells}
                       winningLines={winningLines}
+                      isInteractionDisabled={isMarking}
                     />
                   </div>
                 </div>

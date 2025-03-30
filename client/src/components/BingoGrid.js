@@ -23,7 +23,8 @@ const BingoGrid = React.memo(({
   grid, 
   onCellClick, 
   markedCells, 
-  winningLines
+  winningLines,
+  isInteractionDisabled
 }) => {
   const { theme } = useContext(ThemeContext);
   const gridSize = grid?.length || 5;
@@ -79,6 +80,15 @@ const BingoGrid = React.memo(({
     // Check if this cell is part of a winning line
     const isWinningCell = Array.isArray(winningLines) && winningLines.includes(index);
     
+    // Check if interaction is disabled
+    if (isInteractionDisabled) {
+      return {
+        ...baseStyle,
+        opacity: 0.6,
+        cursor: 'not-allowed'
+      };
+    }
+
     if (isMarked) {
       return {
         ...baseStyle,
@@ -130,6 +140,8 @@ const BingoGrid = React.memo(({
 
   // Cell click handler
   const handleCellClick = (number, index) => {
+    // Prevent click if interaction is disabled
+    if (isInteractionDisabled) return;
     if (typeof onCellClick === 'function') {
       // Pass the cell index first, then the number to the parent component
       onCellClick(index, number);
@@ -170,8 +182,8 @@ const BingoGrid = React.memo(({
             variants={cellVariants}
             onClick={() => handleCellClick(number, index)}
             style={getCellStyle(index)}
-            whileHover={cellHoverAnimation}
-            whileTap={cellTapAnimation}
+            whileHover={isInteractionDisabled ? {} : cellHoverAnimation}
+            whileTap={isInteractionDisabled ? {} : cellTapAnimation}
             data-number={number}
             data-index={index}
           >
