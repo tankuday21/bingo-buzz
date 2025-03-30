@@ -61,6 +61,7 @@ const GamePage = () => {
   
   // Add socket connection status tracking
   const [socketConnected, setSocketConnected] = useState(socket.connected);
+  const [connectionStatus, setConnectionStatus] = useState(socket.connected ? 'Connected' : 'Disconnected');
   
   // Queue for pending marked numbers that arrive before grid is ready
   const pendingMarkedNumbersRef = useRef([]);
@@ -846,6 +847,9 @@ const GamePage = () => {
       console.log('Socket connected:', socket.id);
       setSocketConnected(true);
       setConnectionStatus('Connected');
+      // Clear any previous error messages
+      toast.dismiss();
+      toast.success('Connected to game server');
       // Attempt to re-join the room automatically on connect/reconnect
       if (roomCode && username) {
         console.log(`[Socket Connect] Attempting to re-join room ${roomCode} as ${username}`);
@@ -950,6 +954,39 @@ const GamePage = () => {
     };
   // Add roomCode and username as dependencies so rejoin logic has access to them
   }, [socket, roomCode, username, handleGameStateUpdate, handleGridAssigned, handleNumberMarked, handleTurnChanged, handleGameOver, handleError, handlePlayerJoined, handlePlayerLeft, handlePlayerReadyUpdate, handleGameStarted, handleSyncMarkedNumbers, handleTurnStarted]);
+
+  // Implement missing game event handlers
+  const handleGameStateUpdate = useCallback((gameState) => {
+    console.log('Game state updated:', gameState);
+    if (gameState.grid) setGrid(gameState.grid);
+    if (gameState.markedNumbers) setMarkedCells(Array.from(gameState.markedNumbers));
+    if (gameState.currentTurn) setCurrentTurn(gameState.currentTurn);
+    if (gameState.gameStarted) setGameStarted(gameState.gameStarted);
+    if (gameState.players) setPlayers(gameState.players);
+  }, []);
+
+  const handleGameOver = useCallback(({ winner, winningLines }) => {
+    console.log('Game over:', winner);
+    setWinner(winner);
+    setWinningLines(winningLines || []);
+    setGameStarted(false);
+    setShowConfetti(true);
+    setTimeout(() => setShowConfetti(false), 5000);
+  }, []);
+
+  const handlePlayerReadyUpdate = useCallback(({ playerId, isReady }) => {
+    setPlayers(prevPlayers => 
+      prevPlayers.map(player => 
+        player.id === playerId ? { ...player, isReady } : player
+      )
+    );
+  }, []);
+
+  const handleTurnStarted = useCallback(({ playerId, playerName }) => {
+    setIsMyTurn(socket.id === playerId);
+    setCurrentTurnName(playerName);
+    setTimer(15); // Reset timer for new turn
+  }, [socket.id]);
   
   return (
     <motion.div 
