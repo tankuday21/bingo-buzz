@@ -19,13 +19,16 @@ if (DEBUG) {
 
 // Configure socket with optimized settings
 const socket = io(SERVER_URL, {
-  reconnectionAttempts: 5,
+  reconnectionAttempts: 10,       // Increased from 5 to 10
   reconnectionDelay: 1000,
-  timeout: 20000,
+  reconnectionDelayMax: 5000,     // Cap the delay at 5 seconds
+  timeout: 10000,                 // Reduced from 20000 to 10000 for faster timeout detection
   autoConnect: true,
   transports: ['websocket', 'polling'],
   path: '/socket.io/',
-  withCredentials: true
+  withCredentials: true,
+  forceNew: false,                // Don't force a new connection on reconnect
+  multiplex: true                 // Allow multiplexing
 });
 
 // Connection event handlers
@@ -82,24 +85,50 @@ socket.on('error', (error) => {
   toast.error(`Socket error: ${error.message}`);
 });
 
-// Connection health check
+// Connection health check with improved reliability
 let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
+let lastPingTime = Date.now();
+let lastPongTime = Date.now();
+const MAX_RECONNECT_ATTEMPTS = 10; // Increased from 5 to 10
+
+// Listen for pong responses
+socket.on('pong', () => {
+  lastPongTime = Date.now();
+  reconnectAttempts = 0; // Reset reconnect attempts on successful pong
+});
+
+// More frequent health check (15 seconds instead of 25)
 const healthCheck = setInterval(() => {
+  const now = Date.now();
+
   if (socket.connected) {
+    // Send ping to check connection
     socket.emit('ping');
+    lastPingTime = now;
+
+    // Check if we've received a pong recently
+    if (now - lastPongTime > 30000) { // No pong for 30 seconds
+      console.warn('No pong received for 30 seconds, attempting reconnection');
+      socket.disconnect().connect(); // Force reconnection
+    }
+
     reconnectAttempts = 0; // Reset reconnect attempts when connected
   } else {
     reconnectAttempts++;
+    console.warn(`Socket disconnected. Reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
+
     if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
       // Try to reconnect
-      socket.connect();
+      if (!socket.connected && !socket.connecting) {
+        socket.connect();
+      }
     } else {
-      clearInterval(healthCheck);
-      toast.error('Connection lost. Please refresh the page.');
+      // Don't clear the interval, just show an error and reset the counter
+      toast.error('Connection issues detected. Trying to reconnect...');
+      reconnectAttempts = Math.floor(MAX_RECONNECT_ATTEMPTS / 2); // Reset to half to keep trying
     }
   }
-}, 25000);
+}, 15000);
 
 // Clean up on unmount
 window.addEventListener('beforeunload', () => {

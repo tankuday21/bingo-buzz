@@ -141,6 +141,42 @@ const GamePage = () => {
     return () => clearInterval(markingCheckInterval);
   }, [gameStarted]);
 
+  // Add a periodic check for socket connection health
+  useEffect(() => {
+    // Only run this effect if the game has started
+    if (!gameStarted) return;
+
+    // Function to check and refresh socket connection if needed
+    const checkSocketConnection = () => {
+      if (!socket.connected) {
+        console.warn('[Socket Check] Socket disconnected, attempting to reconnect...');
+
+        // Try to reconnect
+        if (!socket.connecting) {
+          socket.connect();
+          toast('Reconnecting to game server...', { icon: '🔄' });
+        }
+
+        // Reset any locks that might be preventing interaction
+        if (isMarkingRef.current) {
+          isMarkingRef.current = false;
+          setIsMarking(false);
+        }
+      } else {
+        // Socket is connected, send a ping to ensure it's responsive
+        socket.emit('ping');
+      }
+    };
+
+    // Check connection every 10 seconds
+    const socketCheckInterval = setInterval(checkSocketConnection, 10000);
+
+    // Initial check
+    checkSocketConnection();
+
+    return () => clearInterval(socketCheckInterval);
+  }, [gameStarted]);
+
   // Join game on mount
   useEffect(() => {
     if (!username) {
@@ -1110,12 +1146,17 @@ const GamePage = () => {
       // Emit mark-number event to the server
       console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
 
+      // Track if we've received a response
+      let responseReceived = false;
+
       // Add a callback to handle the response
       socket.emit('mark-number', {
         roomCode,
         number,
         cellIndex
       }, (response) => {
+        responseReceived = true;
+
         // Handle the response from the server
         if (response && response.error) {
           console.error(`[handleMarkNumber] Server returned error:`, response.error);
@@ -1128,6 +1169,25 @@ const GamePage = () => {
         isMarkingRef.current = false;
         setIsMarking(false);
       });
+
+      // Add a shorter timeout to check if we've received a response
+      setTimeout(() => {
+        if (!responseReceived && isMarkingRef.current) {
+          console.log('[handleMarkNumber] No response received yet, checking socket connection...');
+
+          // Check if socket is still connected
+          if (!socket.connected) {
+            console.error('[handleMarkNumber] Socket disconnected, attempting to reconnect...');
+            socket.connect();
+
+            // Release the marking lock
+            isMarkingRef.current = false;
+            setIsMarking(false);
+
+            toast.error('Lost connection to the server. Attempting to reconnect...');
+          }
+        }
+      }, 1500); // Check after 1.5 seconds
 
       // Resetting isMarking is handled by handleNumberMarked or handleError
       // --- Debounced Logic Ends Here ---
