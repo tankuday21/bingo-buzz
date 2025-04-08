@@ -12,21 +12,21 @@
 function generateUniqueGrid(size, playerIdentifier = '', usedNumbers = new Set()) {
   // Parse the grid dimensions
   const [rows, cols] = size.split('x').map(Number);
-  
+
   // Calculate total number of cells and max number
   const total = rows * cols;
   const maxNumber = total; // Numbers should be from 1 to total
-  
+
   // Create a pool of available numbers (1 to total)
   const numberPool = Array.from({ length: maxNumber }, (_, i) => i + 1);
-  
+
   // Remove numbers that have been used in other grids
   for (let i = numberPool.length - 1; i >= 0; i--) {
     if (usedNumbers.has(numberPool[i])) {
       numberPool.splice(i, 1);
     }
   }
-  
+
   // If we don't have enough numbers, expand the range
   if (numberPool.length < total) {
     console.warn(`Not enough unique numbers available for grid ${size}, expanding range`);
@@ -37,19 +37,19 @@ function generateUniqueGrid(size, playerIdentifier = '', usedNumbers = new Set()
       }
     }
   }
-  
+
   // Shuffle the available numbers
   for (let i = numberPool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [numberPool[i], numberPool[j]] = [numberPool[j], numberPool[i]];
   }
-  
+
   // Take the first 'total' numbers for this grid
   const selectedNumbers = numberPool.slice(0, total);
-  
+
   // Create a new set of used numbers
   const newUsedNumbers = new Set([...usedNumbers, ...selectedNumbers]);
-  
+
   // Convert to 2D array
   const grid = [];
   for (let i = 0; i < rows; i++) {
@@ -62,7 +62,7 @@ function generateUniqueGrid(size, playerIdentifier = '', usedNumbers = new Set()
     }
     grid.push(row);
   }
-  
+
   return {
     grid,
     usedNumbers: newUsedNumbers
@@ -79,16 +79,16 @@ function generateGrid(size, seed) {
   // Parse grid size
   const [rows, cols] = size.split('x').map(Number);
   const total = rows * cols;
-  
+
   // Create array of numbers from 1 to total
   const numbers = Array.from({ length: total }, (_, i) => i + 1);
-  
+
   // Shuffle numbers using seed
   const shuffled = numbers.sort(() => {
     const x = Math.sin(seed.length + numbers.length);
     return x - Math.floor(x);
   });
-  
+
   // Create grid
   const grid = [];
   for (let i = 0; i < rows; i++) {
@@ -101,7 +101,7 @@ function generateGrid(size, seed) {
     }
     grid.push(row);
   }
-  
+
   return grid;
 }
 
@@ -115,14 +115,14 @@ function checkWin(game) {
   for (const [playerId, grid] of Object.entries(game.grids)) {
     const lines = [];
     const size = grid.length;
-    
+
     // Check rows
     for (let i = 0; i < size; i++) {
       if (grid[i].every(num => game.markedNumbers.has(num))) {
         lines.push({ type: 'row', index: i });
       }
     }
-    
+
     // Check columns
     for (let j = 0; j < size; j++) {
       const column = grid.map(row => row[j]);
@@ -130,25 +130,26 @@ function checkWin(game) {
         lines.push({ type: 'col', index: j });
       }
     }
-    
+
     // Check main diagonal (top-left to bottom-right)
     const mainDiag = grid.map((row, i) => row[i]);
     if (mainDiag.every(num => game.markedNumbers.has(num))) {
       lines.push({ type: 'diag', index: 0 });
     }
-    
+
     // Check other diagonal (top-right to bottom-left)
     const otherDiag = grid.map((row, i) => row[size - 1 - i]);
     if (otherDiag.every(num => game.markedNumbers.has(num))) {
       lines.push({ type: 'diag', index: 1 });
     }
-    
-    // Check if player has 5 or more completed lines
+
+    // Check if player has 5 completed lines (end the game at 5 lines)
     if (lines.length >= 5) {
-      return { playerId, lines };
+      // Only return the first 5 lines to ensure the game ends at 5 lines
+      return { playerId, lines: lines.slice(0, 5) };
     }
   }
-  
+
   // No winner found
   return null;
 }
@@ -162,15 +163,15 @@ function getUnmarkedNumbers(game) {
   // Get the size of the grid
   const gridSize = game.gridSize.split('x').map(Number);
   const maxNum = gridSize[0] * gridSize[1];
-  
+
   // Create a set of all numbers in the grid
   const allNumbers = new Set(Array.from({ length: maxNum }, (_, i) => i + 1));
-  
+
   // Remove marked numbers
   for (const num of game.markedNumbers) {
     allNumbers.delete(num);
   }
-  
+
   // Convert back to array
   return Array.from(allNumbers);
 }
@@ -184,10 +185,10 @@ function getUnmarkedNumbers(game) {
 function getRemainingLines(game, playerId) {
   const grid = game.grids[playerId];
   if (!grid) return [];
-  
+
   const size = grid.length;
   const potentialLines = [];
-  
+
   // Check rows
   for (let i = 0; i < size; i++) {
     const row = grid[i];
@@ -199,7 +200,7 @@ function getRemainingLines(game, playerId) {
       remaining: size - markedCount
     });
   }
-  
+
   // Check columns
   for (let j = 0; j < size; j++) {
     const column = grid.map(row => row[j]);
@@ -211,7 +212,7 @@ function getRemainingLines(game, playerId) {
       remaining: size - markedCount
     });
   }
-  
+
   // Check main diagonal
   const mainDiag = grid.map((row, i) => row[i]);
   const mainDiagMarkedCount = mainDiag.filter(num => game.markedNumbers.has(num)).length;
@@ -221,7 +222,7 @@ function getRemainingLines(game, playerId) {
     completion: (mainDiagMarkedCount / size) * 100,
     remaining: size - mainDiagMarkedCount
   });
-  
+
   // Check other diagonal
   const otherDiag = grid.map((row, i) => row[size - 1 - i]);
   const otherDiagMarkedCount = otherDiag.filter(num => game.markedNumbers.has(num)).length;
@@ -231,7 +232,7 @@ function getRemainingLines(game, playerId) {
     completion: (otherDiagMarkedCount / size) * 100,
     remaining: size - otherDiagMarkedCount
   });
-  
+
   // Sort by completion (highest first)
   return potentialLines.sort((a, b) => b.completion - a.completion);
 }
@@ -252,7 +253,7 @@ function validateGrid(grid, usedGrids = new Set()) {
   const cols = grid[0].length;
   const total = rows * cols;
   const numbers = new Set();
-  
+
   // Check grid dimensions
   if (!grid.every(row => Array.isArray(row) && row.length === cols)) {
     console.error('Inconsistent grid dimensions');
@@ -284,7 +285,7 @@ function validateGrid(grid, usedGrids = new Set()) {
 
   // Convert grid to string for comparison
   const gridString = grid.map(row => row.join(',')).join('|');
-  
+
   // Check if this grid has been used before
   if (usedGrids.has(gridString)) {
     console.error('Grid has been used before');
@@ -304,21 +305,21 @@ function validateGrid(grid, usedGrids = new Set()) {
 function generateUniquePlayerGrid(size, playerIdentifier, usedGrids = new Set()) {
   const maxAttempts = 100; // Prevent infinite loops
   let attempts = 0;
-  
+
   // Parse grid size
   const [rows, cols] = size.split('x').map(Number);
   const total = rows * cols;
-  
+
   while (attempts < maxAttempts) {
     // Create array of numbers from 1 to total
     const numbers = Array.from({ length: total }, (_, i) => i + 1);
-    
+
     // Shuffle numbers
     for (let i = numbers.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
     }
-    
+
     // Create grid
     const grid = [];
     for (let i = 0; i < rows; i++) {
@@ -331,17 +332,17 @@ function generateUniquePlayerGrid(size, playerIdentifier, usedGrids = new Set())
       }
       grid.push(row);
     }
-    
+
     // Check if grid is unique
     const gridString = grid.map(row => row.join(',')).join('|');
     if (!usedGrids.has(gridString)) {
       usedGrids.add(gridString);
       return grid;
     }
-    
+
     attempts++;
   }
-  
+
   // If we couldn't generate a unique grid after max attempts,
   // generate a new grid with a different seed
   console.warn('Could not generate unique grid after max attempts, using fallback method');
