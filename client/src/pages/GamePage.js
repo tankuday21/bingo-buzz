@@ -1111,7 +1111,7 @@ const GamePage = () => {
       socket.off('reconnect');
     };
   // Add roomCode and username as dependencies so rejoin logic has access to them
-  }, [socket, roomCode, username, handleGameStateUpdate, handleGridAssigned, handleNumberMarked, handleTurnChanged, handleGameOver, handleError, handlePlayerJoined, handlePlayerLeft, handlePlayerReadyUpdate, handleGameStarted, handleSyncMarkedNumbers, handleTurnStarted]);
+  }, [socket, roomCode, username]);
 
   // Implement missing game event handlers
   const handleGameStateUpdate = useCallback((gameState) => {
@@ -1455,7 +1455,24 @@ const GamePage = () => {
       <audio ref={audioRef} src="/sounds/game-start.mp3" preload="auto" />
 
       {/* Connection status indicator */}
-      <ConnectionStatus />
+      <div className="fixed bottom-4 right-4 z-50">
+        <div
+          className="px-3 py-1 rounded-full text-sm flex items-center shadow-lg"
+          style={{
+            backgroundColor: socketConnected ? theme.colors.success : theme.colors.error || '#ef4444',
+            color: '#ffffff'
+          }}
+        >
+          <div
+            className="w-2 h-2 rounded-full mr-2"
+            style={{
+              backgroundColor: '#ffffff',
+              boxShadow: socketConnected ? '0 0 6px 2px rgba(255, 255, 255, 0.5)' : 'none'
+            }}
+          />
+          {socketConnected ? 'Connected' : connectionStatus}
+        </div>
+      </div>
     </motion.div>
   );
 };
