@@ -465,51 +465,73 @@ const GamePage = () => {
 
   // Handle receiving a marked number from the server
   // Use useCallback to potentially stabilize the function reference if needed as dependency elsewhere
-  // Update destructuring to only expect number, markedBy, automatic
-  const handleNumberMarked = useCallback(({ number, markedBy, automatic }) => {
-    // Use the REF here to check grid readiness
-    // Log received data
-    console.log(`[handleNumberMarked] Received event. Number: ${number}, MarkedBy: ${markedBy}, Automatic: ${automatic}. Checking grid readiness... Current isGridReadyRef.current: ${isGridReadyRef.current}`);
+  const handleNumberMarked = useCallback((data) => {
+    // Get data properties with fallbacks for backward compatibility
+    const number = data.number;
+    const markedBy = data.markedBy;
+    const automatic = data.automatic;
+
+    // Only log in debug mode
+    if (DEBUG) {
+      console.log(`[handleNumberMarked] Received event. Number: ${number}, MarkedBy: ${markedBy}, Automatic: ${automatic}. Grid ready: ${isGridReadyRef.current}`);
+    }
+
+    // Set last marked number for highlighting
+    if (number) {
+      setLastMarkedNumber(number);
+
+      // Clear the last marked number highlight after 3 seconds
+      setTimeout(() => {
+        setLastMarkedNumber(null);
+      }, 3000);
+    }
+
+    // Update marked cells if provided directly
+    if (data.markedCells) {
+      setMarkedCells(data.markedCells);
+    }
+
+    // Update turn information
+    if (data.currentTurn) {
+      setCurrentTurn(data.currentTurn);
+      setIsMyTurn(data.currentTurn === socket.id);
+    }
+
+    // Update timer
+    if (data.timer) {
+      setTimer(data.timer);
+    }
 
     if (isGridReadyRef.current) {
       // Grid is ready. Use functional setGrid to access the LATEST grid state
-      console.log('[handleNumberMarked] Grid IS ready (ref check). Using setGrid to access latest grid state for processing.');
+      if (DEBUG) {
+        console.log('[handleNumberMarked] Grid IS ready. Processing number.');
+      }
       setGrid(currentGrid => {
         // Now we are guaranteed to have the most up-to-date grid
         processMarkedNumbers([number], currentGrid);
-        // setIsMarking(false); // <<< REMOVE from here
         return currentGrid; // Important: return the grid state unchanged
       });
-      // ** Call setIsMarking(false) directly AFTER the setGrid call **
-      console.log('[handleNumberMarked] Attempting to set isMarking to false.');
-      // Check ref value right before setting state
-      console.log(`[handleNumberMarked] isMarkingRef.current BEFORE direct set & setIsMarking(false): ${isMarkingRef.current}`);
-      // --- Try direct ref update FIRST ---
-      isMarkingRef.current = false;
-      // --- Now set state ---
-      setIsMarking(false);
-      console.log(`[handleNumberMarked] Successfully called setIsMarking(false). Ref is now: ${isMarkingRef.current}`);
     } else {
       // Grid is not ready, queue the number
-      console.warn(`[handleNumberMarked] Grid is NOT ready (ref check) when receiving number ${number}. Queuing.`);
+      if (DEBUG) {
+        console.log(`[handleNumberMarked] Grid is NOT ready. Queuing number ${number}.`);
+      }
       // Avoid adding duplicates to the queue
-      if (!pendingMarkedNumbersRef.current.includes(number)) {
+      if (number && !pendingMarkedNumbersRef.current.includes(number)) {
           pendingMarkedNumbersRef.current.push(number);
       }
-       // Even if queued, we should probably release the lock as the server won't confirm this specific action now.
-      // Also release lock here if grid wasn't ready
-      console.log('[handleNumberMarked - Grid Not Ready] Attempting to set isMarking to false.');
-      // Check ref value right before setting state
-      console.log(`[handleNumberMarked - Grid Not Ready] isMarkingRef.current BEFORE direct set & setIsMarking(false): ${isMarkingRef.current}`);
-      // --- Try direct ref update FIRST ---
-      isMarkingRef.current = false;
-      // --- Now set state ---
-      setIsMarking(false);
-      console.log(`[handleNumberMarked - Grid Not Ready] Successfully called setIsMarking(false). Ref is now: ${isMarkingRef.current}`);
     }
-  // Keep grid dependency for useCallback, even though we access latest via setGrid now.
-  // This ensures the callback reference updates if grid reference changes, which is still correct.
-  }, [grid, markedHistory]);
+
+    // Always release marking lock
+    isMarkingRef.current = false;
+    setIsMarking(false);
+
+    // Add to history if not already there
+    if (number && !markedHistory.includes(number)) {
+      setMarkedHistory(prev => [...prev, number]);
+    }
+  }, [markedHistory]);
 
   // Handle receiving a full sync of marked numbers
   const handleSyncMarkedNumbers = useCallback(({ markedNumbers }) => {
@@ -1049,44 +1071,6 @@ const GamePage = () => {
   }, [socket, roomCode, username, handleGameStateUpdate, handleGridAssigned, handleNumberMarked, handleTurnChanged, handleGameOver, handleError, handlePlayerJoined, handlePlayerLeft, handlePlayerReadyUpdate, handleGameStarted, handleSyncMarkedNumbers, handleTurnStarted]);
 
   // Implement missing game event handlers
-  // Handle receiving a marked number from the server
-  const handleNumberMarked = useCallback((data) => {
-    if (DEBUG) {
-      console.log('Number marked:', data);
-    }
-
-    // Update marked cells
-    if (data.markedCells) {
-      setMarkedCells(data.markedCells);
-    }
-
-    // Update turn
-    if (data.currentTurn) {
-      setCurrentTurn(data.currentTurn);
-      setIsMyTurn(data.currentTurn === socket.id);
-    }
-
-    // Update timer
-    if (data.timer) {
-      setTimer(data.timer);
-    }
-
-    // Add to history and set last marked number for highlighting
-    if (data.number) {
-      setMarkedHistory(prev => [...prev, data.number]);
-      setLastMarkedNumber(data.number);
-
-      // Clear the last marked number highlight after 3 seconds
-      setTimeout(() => {
-        setLastMarkedNumber(null);
-      }, 3000);
-    }
-
-    // Release marking lock
-    isMarkingRef.current = false;
-    setIsMarking(false);
-  }, []);
-
   const handleGameStateUpdate = useCallback((gameState) => {
     if (DEBUG) {
       console.log('Game state updated:', gameState);
