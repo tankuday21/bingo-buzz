@@ -1271,31 +1271,39 @@ const GamePage = () => {
       }, 2000); // Reduced to 2 seconds for faster recovery
 
       // Emit mark-number event to the server
-      console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
+      console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number });
 
       // Track if we've received a response
       let responseReceived = false;
 
-      // Add a callback to handle the response
-      socket.emit('mark-number', {
-        roomCode,
-        number,
-        cellIndex
-      }, (response) => {
-        responseReceived = true;
+      try {
+        // Add a callback to handle the response - ONLY send roomCode and number as server expects
+        socket.emit('mark-number', {
+          roomCode,
+          number
+        }, (response) => {
+          responseReceived = true;
 
-        // Handle the response from the server
-        if (response && response.error) {
-          console.error(`[handleMarkNumber] Server returned error:`, response.error);
-          toast.error(response.error);
-        } else if (response && response.success) {
-          console.log(`[handleMarkNumber] Server confirmed mark:`, response);
-        }
+          // Handle the response from the server
+          if (response && response.error) {
+            console.error(`[handleMarkNumber] Server returned error:`, response.error);
+            toast.error(response.error);
+          } else if (response && response.success) {
+            console.log(`[handleMarkNumber] Server confirmed mark:`, response);
+          }
+
+          // Release the marking lock
+          isMarkingRef.current = false;
+          setIsMarking(false);
+        });
+      } catch (error) {
+        console.error('[handleMarkNumber] Error emitting mark-number event:', error);
+        toast.error('Error sending move to server');
 
         // Release the marking lock
         isMarkingRef.current = false;
         setIsMarking(false);
-      });
+      }
 
       // Add a shorter timeout to check if we've received a response
       setTimeout(() => {

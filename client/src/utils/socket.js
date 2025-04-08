@@ -19,16 +19,18 @@ if (DEBUG) {
 
 // Configure socket with optimized settings
 const socket = io(SERVER_URL, {
-  reconnectionAttempts: 10,       // Increased from 5 to 10
-  reconnectionDelay: 1000,
-  reconnectionDelayMax: 5000,     // Cap the delay at 5 seconds
-  timeout: 10000,                 // Reduced from 20000 to 10000 for faster timeout detection
+  reconnectionAttempts: 20,       // Increased to 20 for more persistent reconnection
+  reconnectionDelay: 500,         // Start with a shorter delay
+  reconnectionDelayMax: 2000,     // Cap the delay at 2 seconds for faster recovery
+  timeout: 5000,                  // Reduced to 5000 for faster timeout detection
   autoConnect: true,
   transports: ['websocket', 'polling'],
   path: '/socket.io/',
   withCredentials: true,
   forceNew: false,                // Don't force a new connection on reconnect
-  multiplex: true                 // Allow multiplexing
+  multiplex: true,                // Allow multiplexing
+  pingInterval: 5000,             // Send pings more frequently
+  pingTimeout: 10000              // Wait longer for pong responses
 });
 
 // Connection event handlers
@@ -97,7 +99,7 @@ socket.on('pong', () => {
   reconnectAttempts = 0; // Reset reconnect attempts on successful pong
 });
 
-// More frequent health check (10 seconds instead of 15)
+// More frequent health check (5 seconds instead of 10)
 const healthCheck = setInterval(() => {
   const now = Date.now();
 
@@ -107,20 +109,34 @@ const healthCheck = setInterval(() => {
     lastPingTime = now;
 
     // Check if we've received a pong recently
-    if (now - lastPongTime > 20000) { // No pong for 20 seconds (reduced from 30)
-      console.warn('No pong received for 20 seconds, forcing reconnection');
+    if (now - lastPongTime > 15000) { // No pong for 15 seconds (reduced from 20)
+      console.warn('No pong received for 15 seconds, forcing reconnection');
 
       // Force a complete reconnection
       try {
-        socket.disconnect();
+        // First try to refresh the connection without disconnecting
+        socket.io.engine.close();
+        socket.io.engine.open();
+        console.log('Socket connection refreshed');
+
+        // If that doesn't work, try a full disconnect/reconnect
         setTimeout(() => {
           if (!socket.connected) {
-            socket.connect();
-            console.log('Socket reconnection attempted after disconnect');
+            socket.disconnect();
+            setTimeout(() => {
+              socket.connect();
+              console.log('Socket reconnection attempted after disconnect');
+            }, 500);
           }
         }, 1000);
       } catch (e) {
         console.error('Error during forced reconnection:', e);
+        // Last resort - try to reconnect directly
+        try {
+          socket.connect();
+        } catch (e2) {
+          console.error('Failed even direct reconnection:', e2);
+        }
       }
     }
 
@@ -141,24 +157,36 @@ const healthCheck = setInterval(() => {
       }
     } else {
       // Don't clear the interval, just show an error and reset the counter
-      toast.error('Connection issues detected. Trying to reconnect...');
+      toast('Connection issues detected. Trying to reconnect...', {
+        icon: '🔄',
+        duration: 3000
+      });
       reconnectAttempts = Math.floor(MAX_RECONNECT_ATTEMPTS / 2); // Reset to half to keep trying
 
       // Force a complete reconnection
       try {
-        socket.disconnect();
+        // Try to reset the socket completely
+        socket.io.engine.close();
         setTimeout(() => {
-          if (!socket.connected) {
+          socket.io.engine.open();
+          console.log('Socket engine reopened after max attempts');
+        }, 500);
+      } catch (e) {
+        console.error('Error during engine reset:', e);
+        // Fall back to disconnect/connect
+        try {
+          socket.disconnect();
+          setTimeout(() => {
             socket.connect();
             console.log('Socket reconnection attempted after max attempts');
-          }
-        }, 1000);
-      } catch (e) {
-        console.error('Error during forced reconnection after max attempts:', e);
+          }, 500);
+        } catch (e2) {
+          console.error('Error during forced reconnection after max attempts:', e2);
+        }
       }
     }
   }
-}, 10000);
+}, 5000);
 
 // Clean up on unmount
 window.addEventListener('beforeunload', () => {
