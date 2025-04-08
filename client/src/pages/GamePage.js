@@ -149,9 +149,35 @@ const GamePage = () => {
     lastTurnChangeTimeRef.current = Date.now();
   }, [currentTurn]);
 
+  // Function to request the current game state from the server
+  const requestGameState = useCallback(() => {
+    console.log('[requestGameState] Requesting current game state from server');
+
+    // Reset any locks that might be preventing interaction
+    isMarkingRef.current = false;
+    setIsMarking(false);
+
+    // Show a message to the user
+    toast('Syncing game state...', { icon: '🔄' });
+
+    try {
+      // Request the current game state from the server
+      socket.emit('request-game-state', { roomCode });
+
+      // Also request marked numbers to ensure we're in sync
+      socket.emit('request-marked-numbers', { roomCode });
+    } catch (e) {
+      console.error('[requestGameState] Error requesting game state:', e);
+      toast.error('Failed to sync game state. Please refresh the page.');
+    }
+  }, [roomCode]);
+
   // Function to manually force a turn change (for recovery)
   const forceNextTurn = useCallback(() => {
     console.log('[forceNextTurn] Manually forcing turn change');
+
+    // First, try to request the current game state to ensure we're in sync
+    requestGameState();
 
     // Find the next player
     if (players.length < 2) {
@@ -229,7 +255,7 @@ const GamePage = () => {
     } catch (e) {
       console.error('[forceNextTurn] Error notifying server about turn change:', e);
     }
-  }, [currentTurn, players, socket.id, roomCode]);
+  }, [currentTurn, players, socket.id, roomCode, requestGameState]);
 
   // Add a periodic check for socket connection health
   useEffect(() => {
@@ -1137,7 +1163,22 @@ const GamePage = () => {
     }
 
     // Attempt recovery based on error type
-    if (errorMsg.includes('connection') || errorMsg.includes('disconnect')) {
+    if (errorMsg.includes('Not your turn')) {
+      // Turn synchronization error - client thinks it's their turn but server disagrees
+      console.warn('[handleError] Turn synchronization error detected');
+
+      // Update local state to match server
+      setIsMyTurn(false);
+
+      // Request full game state to resync
+      if (socket && socket.connected && roomCode) {
+        toast('Turn out of sync. Syncing with server...', {
+          icon: '🔄',
+          duration: 3000
+        });
+        requestGameState();
+      }
+    } else if (errorMsg.includes('connection') || errorMsg.includes('disconnect')) {
       // Connection-related errors
       if (socket && !socket.connected) {
         toast('Attempting to reconnect...', {
@@ -1153,7 +1194,7 @@ const GamePage = () => {
           icon: '🔄',
           duration: 3000
         });
-        socket.emit('request-game-state', { roomCode });
+        requestGameState();
       }
     }
   };
@@ -1246,6 +1287,8 @@ const GamePage = () => {
       // Perform the checks *inside* the debounced function
       if (!isMyTurn) {
         toast.error("It's not your turn");
+        // Request game state to ensure we're in sync
+        requestGameState();
         return;
       }
 
@@ -1263,6 +1306,21 @@ const GamePage = () => {
       if (markedCells.includes(cellIndex)) {
         toast.error("This number is already marked");
         return;
+      }
+
+      // Double-check with the server if it's actually our turn
+      // This helps prevent the "Not your turn" errors
+      try {
+        socket.emit('check-turn', { roomCode }, (response) => {
+          if (response && response.isYourTurn === false) {
+            console.log('[handleMarkNumber] Server says it\'s not our turn, but client thinks it is. Syncing state...');
+            toast.error("Turn out of sync. Syncing with server...");
+            requestGameState();
+            return;
+          }
+        });
+      } catch (e) {
+        console.error('[handleMarkNumber] Error checking turn with server:', e);
       }
 
       // Set marking state BEFORE emitting to prevent multiple clicks
@@ -1626,6 +1684,21 @@ const GamePage = () => {
             </button>
 
             <ThemeSwitcher className="ml-2" />
+
+            {/* Sync Game State button - always show during game */}
+            {gameStarted && (
+              <button
+                onClick={requestGameState}
+                className="ml-2 px-3 py-1 rounded-md text-sm font-medium transition-colors duration-200"
+                style={{
+                  backgroundColor: theme.colors.accent,
+                  color: '#ffffff'
+                }}
+                title="Sync game state with server"
+              >
+                Sync Game State
+              </button>
+            )}
 
             {/* Emergency turn change button - only show during game */}
             {gameStarted && (
