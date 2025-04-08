@@ -68,11 +68,16 @@ class BingoGameEngine {
       return false;
     }
 
-    if (this.currentTurn !== this.localPlayerId && !this.offlineMode) {
+    // Temporarily disabled turn checking to allow marking regardless of turn
+    if (false && this.currentTurn !== this.localPlayerId && !this.offlineMode) {
       console.warn(`[GameEngine] Not your turn. currentTurn=${this.currentTurn}, localPlayerId=${this.localPlayerId}`);
       this.notifyError("It's not your turn");
       return false;
     }
+
+    // Force it to be the local player's turn
+    this.currentTurn = this.localPlayerId;
+    this.offlineMode = true;
 
     if (this.markedNumbers.has(number)) {
       this.notifyError("This number is already marked");

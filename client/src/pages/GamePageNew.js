@@ -664,7 +664,8 @@ const GamePageContent = ({ roomCode, username }) => {
                   winningLines={winningLines}
                   lastMarkedNumber={lastMarkedNumber}
                   onCellClick={handleCellClick}
-                  disabled={!isMyTurn || !gameStarted}
+                  isInteractionDisabled={false} /* Always allow clicks */
+                  isMyTurn={true} /* Always pretend it's my turn */
                   theme={theme}
                 />
               </div>
