@@ -493,15 +493,35 @@ const GamePage = () => {
     });
 
     if (newMarkedIndices.length > 0) {
-        console.log('[processMarkedNumbers] Updating markedCells state with indices:', newMarkedIndices);
-        // Use functional update for markedCells
+        if (DEBUG) {
+            console.log('[processMarkedNumbers] Updating markedCells state with indices:', newMarkedIndices);
+        }
+
+        // Use functional update for markedCells with a more reliable approach
         setMarkedCells(prev => {
-            const updatedSet = new Set(prev);
-            newMarkedIndices.forEach(index => updatedSet.add(index));
-            return Array.from(updatedSet);
+            // Create a new array with all previous marked cells
+            const updatedMarkedCells = [...prev];
+
+            // Add new marked indices, avoiding duplicates
+            newMarkedIndices.forEach(index => {
+                if (!updatedMarkedCells.includes(index)) {
+                    updatedMarkedCells.push(index);
+                }
+            });
+
+            return updatedMarkedCells;
         });
+
         // Use functional update for markedHistory
-        setMarkedHistory(prev => [...prev, ...newHistoryNumbers]);
+        setMarkedHistory(prev => {
+            const updatedHistory = [...prev];
+            newHistoryNumbers.forEach(num => {
+                if (!updatedHistory.includes(num)) {
+                    updatedHistory.push(num);
+                }
+            });
+            return updatedHistory;
+        });
     }
   };
 
@@ -530,7 +550,20 @@ const GamePage = () => {
 
     // Update marked cells if provided directly
     if (data.markedCells) {
-      setMarkedCells(data.markedCells);
+      // Make sure we're not replacing the existing marked cells, but adding to them
+      setMarkedCells(prev => {
+        // Create a new array with all previous marked cells
+        const updatedMarkedCells = [...prev];
+
+        // Add new marked cells, avoiding duplicates
+        data.markedCells.forEach(index => {
+          if (!updatedMarkedCells.includes(index)) {
+            updatedMarkedCells.push(index);
+          }
+        });
+
+        return updatedMarkedCells;
+      });
     }
 
     // Update turn information
@@ -578,26 +611,51 @@ const GamePage = () => {
   // Handle receiving a full sync of marked numbers
   const handleSyncMarkedNumbers = useCallback(({ markedNumbers }) => {
     // Use the REF here
-    console.log(`[handleSyncMarkedNumbers] Received sync event with ${markedNumbers?.length} numbers. Checking grid readiness... Current isGridReadyRef.current: ${isGridReadyRef.current}`);
+    if (DEBUG) {
+      console.log(`[handleSyncMarkedNumbers] Received sync event with ${markedNumbers?.length} numbers. Grid ready: ${isGridReadyRef.current}`);
+    }
+
     if (Array.isArray(markedNumbers)) {
         if (isGridReadyRef.current) {
             // Grid is ready. Use functional setGrid to access the LATEST grid state
-            console.log('[handleSyncMarkedNumbers] Grid IS ready (ref check). Using setGrid to access latest grid state for processing.');
+            if (DEBUG) {
+              console.log('[handleSyncMarkedNumbers] Grid IS ready. Processing numbers.');
+            }
+
+            // First, update the markedHistory to include all these numbers
+            setMarkedHistory(prev => {
+                const updatedHistory = [...prev];
+                markedNumbers.forEach(num => {
+                    if (!updatedHistory.includes(num)) {
+                        updatedHistory.push(num);
+                    }
+                });
+                return updatedHistory;
+            });
+
+            // Then process the numbers to update markedCells
             setGrid(currentGrid => {
               // Now we are guaranteed to have the most up-to-date grid
               processMarkedNumbers(markedNumbers, currentGrid);
               return currentGrid; // Important: return the grid state unchanged
             });
         } else {
-            // Grid not ready, replace the queue with the synced list, ensuring no duplicates
-            console.warn('[handleSyncMarkedNumbers] Grid is NOT ready (ref check). Replacing queue with synced numbers.');
-            pendingMarkedNumbersRef.current = [...new Set(markedNumbers)]; // Use Set to remove duplicates
+            // Grid not ready, queue the numbers for later processing
+            if (DEBUG) {
+              console.log('[handleSyncMarkedNumbers] Grid is NOT ready. Queuing numbers.');
+            }
+
+            // Add to pending numbers, ensuring no duplicates
+            markedNumbers.forEach(num => {
+                if (!pendingMarkedNumbersRef.current.includes(num)) {
+                    pendingMarkedNumbersRef.current.push(num);
+                }
+            });
         }
     } else {
         console.error('[handleSyncMarkedNumbers] Received invalid markedNumbers data:', markedNumbers);
     }
-  // Keep grid dependency for useCallback
-  }, [grid, markedHistory]);
+  }, []);
 
   // Fix player mapping in the waiting room section
   const normalizePlayer = (player) => {
@@ -934,38 +992,66 @@ const GamePage = () => {
     });
   };
 
-  // Handle marking a number - NOW WITH DEBOUNCING
+  // Handle marking a number with improved reliability
   const handleMarkNumber = useCallback((cellIndex, number) => {
     // Clear any existing debounce timer
     if (markNumberDebounceTimerRef.current) {
       clearTimeout(markNumberDebounceTimerRef.current);
+      markNumberDebounceTimerRef.current = null;
     }
 
     // Set a new debounce timer
     markNumberDebounceTimerRef.current = setTimeout(() => {
       // --- Debounced Logic Starts Here ---
-      // Log state values AT THE MOMENT this DEBOUNCED callback executes
-      turnCheckLog.current = `[Debounced] handleMarkNumber executing. isMyTurn: ${isMyTurn}, gameStarted: ${gameStarted}, isMarkingRef.current: ${isMarkingRef.current}`;
-      console.log(turnCheckLog.current);
-
-      // Perform the checks *inside* the debounced function
-      // Use the isMarkingRef for the check
-      if (!isMyTurn || !gameStarted || isMarkingRef.current) {
-        console.log('[Debounced] Cannot mark number:', { isMyTurn, gameStarted, isMarking: isMarkingRef.current }); // Log ref value
-        // If isMarking is true, it means a mark attempt is already in progress.
-        if (isMarkingRef.current) toast.error("Please wait for the previous action to complete.");
-        return; // Do not proceed
+      // Only log in debug mode
+      if (DEBUG) {
+        console.log(`[handleMarkNumber] Executing with isMyTurn: ${isMyTurn}, gameStarted: ${gameStarted}, isMarking: ${isMarkingRef.current}`);
       }
 
-      console.log(`[Debounced] Attempting to mark number ${number} at index ${cellIndex}`);
-      console.log(`[Debounced] PRE setIsMarking(true). Current ref value: ${isMarkingRef.current}`);
-      setIsMarking(true); // Lock the state
+      // Perform the checks *inside* the debounced function
+      if (!isMyTurn) {
+        toast.error("It's not your turn");
+        return;
+      }
 
-      // Add specific log before emitting
-      console.log(`[Debounced] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
+      if (!gameStarted) {
+        toast.error("Game hasn't started yet");
+        return;
+      }
+
+      if (isMarkingRef.current) {
+        toast.error("Please wait for the previous action to complete");
+        return;
+      }
+
+      // Check if the cell is already marked
+      if (markedCells.includes(cellIndex)) {
+        toast.error("This number is already marked");
+        return;
+      }
+
+      // Set marking state BEFORE emitting to prevent multiple clicks
+      isMarkingRef.current = true;
+      setIsMarking(true);
+
+      // Add a safety timeout to release the lock if the server doesn't respond
+      const safetyTimeout = setTimeout(() => {
+        if (isMarkingRef.current) {
+          if (DEBUG) {
+            console.log('[handleMarkNumber] Safety timeout releasing lock');
+          }
+          isMarkingRef.current = false;
+          setIsMarking(false);
+        }
+      }, 5000); // 5 second safety timeout
+
       // Emit mark-number event to the server
-    socket.emit('mark-number', {
-      roomCode,
+      if (DEBUG) {
+        console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
+      }
+
+      socket.emit('mark-number', {
+        roomCode,
         number,
         cellIndex
       });
@@ -974,9 +1060,9 @@ const GamePage = () => {
       // --- Debounced Logic Ends Here ---
     }, 300); // Debounce timeout of 300ms
 
-  // Dependencies for the outer useCallback wrapper remain the same
-  // The inner logic accesses state/refs directly when it runs
-  }, [isMyTurn, gameStarted, roomCode]);
+  // Dependencies for the outer useCallback wrapper
+  // Include markedCells to ensure we have the latest state when checking if a cell is already marked
+  }, [isMyTurn, gameStarted, roomCode, markedCells]);
 
   // Add connection status indicator to UI
   const ConnectionStatus = () => (
