@@ -317,7 +317,10 @@ const GamePage = () => {
         }
 
         // Show reconnection message to user
-        toast.info('Reconnecting to game...', { icon: '🔄' });
+        toast('Reconnecting to game...', {
+          icon: '🔄',
+          duration: 3000
+        });
 
         // Emit rejoin event with all necessary data
         socket.emit('rejoin-room', {
@@ -911,13 +914,19 @@ const GamePage = () => {
     if (errorMsg.includes('connection') || errorMsg.includes('disconnect')) {
       // Connection-related errors
       if (socket && !socket.connected) {
-        toast.info('Attempting to reconnect...', { icon: '🔄' });
+        toast('Attempting to reconnect...', {
+          icon: '🔄',
+          duration: 3000
+        });
         socket.connect();
       }
     } else if (errorMsg.includes('game state') || errorMsg.includes('sync')) {
       // Game state errors - request a fresh sync
       if (socket && socket.connected && roomCode) {
-        toast.info('Requesting game state update...', { icon: '🔄' });
+        toast('Requesting game state update...', {
+          icon: '🔄',
+          duration: 3000
+        });
         socket.emit('request-game-state', { roomCode });
       }
     }
@@ -1139,7 +1148,7 @@ const GamePage = () => {
     socket.on('player-ready-update', handlePlayerReadyUpdate);
     socket.on('game-started', handleGameStarted);
     socket.on('sync-marked-numbers', handleSyncMarkedNumbers); // Listen for full sync
-    socket.on('turn-started', handleTurnStarted);
+    socket.on('turn-started', handleTurnChanged);
 
     // Special DEBUG listeners
     socket.on('connect_error', (err) => {
@@ -1186,7 +1195,7 @@ const GamePage = () => {
       socket.off('player-ready-update', handlePlayerReadyUpdate);
       socket.off('game-started', handleGameStarted);
       socket.off('sync-marked-numbers', handleSyncMarkedNumbers);
-      socket.off('turn-started', handleTurnStarted);
+      socket.off('turn-started', handleTurnChanged);
 
       // Cleanup DEBUG listeners
       socket.off('connect_error');
