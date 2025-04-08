@@ -14,138 +14,163 @@ const HomePage = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const { theme } = useContext(ThemeContext);
-  
+
   const navigate = useNavigate();
-  
+
+  // Helper function to join a room and navigate to the game page
+  const joinRoomAndNavigate = (roomCode, username) => {
+    console.log('Joining room and navigating:', roomCode, username);
+
+    // Clear any previous listeners to avoid duplicates
+    socket.off('joined-room');
+    socket.off('join-error');
+
+    // Set up listener for room join confirmation
+    socket.once('joined-room', (data) => {
+      console.log('Successfully joined room:', data);
+      navigate(`/game/${roomCode}`);
+    });
+
+    // Handle join errors
+    socket.once('join-error', (error) => {
+      console.error('Error joining room:', error);
+      toast.error(`Error joining room: ${error.message || error}`);
+      setIsCreating(false);
+      setIsJoining(false);
+    });
+
+    // Emit join room event
+    socket.emit('join-room', { roomCode, username });
+
+    // Set a timeout in case socket events don't fire
+    setTimeout(() => {
+      console.log('Navigating to game room (timeout fallback):', roomCode);
+      navigate(`/game/${roomCode}`);
+    }, 3000);
+  };
+
   // Save username to localStorage
   const saveUsername = (name) => {
     setUsername(name);
     localStorage.setItem('username', name);
   };
-  
+
   // Handle creating a new game
   const handleCreateGame = async () => {
     if (!username) {
       toast.error('Please enter a username');
       return;
     }
-    
+
     try {
       setIsCreating(true);
       console.log('Creating game with grid size:', gridSize);
-      
+
       // Add more verbose logging
       console.log('Sending request to:', '/api/games');
       console.log('Request payload:', { username, gridSize });
-      
+
       // Get server URL from environment variable
       const baseUrl = process.env.REACT_APP_SERVER_URL?.replace(/\/+$/, ''); // Remove trailing slashes
       if (!baseUrl) {
         throw new Error('Server URL not configured. Please set REACT_APP_SERVER_URL in .env');
       }
-      
+
       console.log('Using API URL:', baseUrl);
-      
-      const response = await axios.post(`${baseUrl}/api/games`, { 
-        username, 
-        gridSize 
+
+      const response = await axios.post(`${baseUrl}/api/games`, {
+        username,
+        gridSize
       }, {
         headers: {
           'Content-Type': 'application/json'
         },
         withCredentials: true
       });
-      
+
       console.log('Create room response:', response.data);
-      
+
       if (!response.data || !response.data.roomCode) {
         throw new Error('Invalid server response - no room code received');
       }
-      
+
       const { roomCode } = response.data;
-      
-      // Save username 
+
+      // Save username
       saveUsername(username);
-      
-      // Important: Join the room after creating it
-      console.log('Joining room after creation:', roomCode);
-      socket.emit('join-room', { roomCode, username });
-      
-      // Set up listener for room join confirmation
-      socket.once('joined-room', (data) => {
-        console.log('Successfully joined room after creation:', data);
-        navigate(`/game/${roomCode}`);
-      });
-      
-      // Handle join errors
-      socket.once('join-error', (error) => {
-        console.error('Error joining room after creation:', error);
-        toast.error(`Error joining room: ${error.message || error}`);
-        setIsCreating(false);
-      });
-      
-      // Set a timeout in case socket events don't fire
-      setTimeout(() => {
-        console.log('Navigating to game room (timeout fallback):', roomCode);
-        navigate(`/game/${roomCode}`);
-      }, 3000);
-      
+
+      // Save username and room code to localStorage for recovery
+      saveUsername(username);
+      localStorage.setItem('lastRoomCode', roomCode);
+
+      // Make sure socket is connected before joining
+      if (!socket.connected) {
+        console.log('Socket not connected, attempting to connect...');
+        socket.connect();
+
+        // Wait for connection before proceeding
+        socket.once('connect', () => {
+          joinRoomAndNavigate(roomCode, username);
+        });
+
+        // Handle connection error
+        socket.once('connect_error', (error) => {
+          console.error('Socket connection error:', error);
+          toast.error(`Connection error: ${error.message}. Try again.`);
+          setIsCreating(false);
+        });
+      } else {
+        // Socket already connected, proceed with join
+        joinRoomAndNavigate(roomCode, username);
+      }
+
     } catch (error) {
       console.error('Error creating game:', error);
       toast.error(error.response?.data?.error || error.message || 'Failed to create game');
       setIsCreating(false);
     }
   };
-  
+
   // Handle joining an existing game
   const handleJoinGame = async () => {
     if (!username) {
       toast.error('Please enter a username');
       return;
     }
-    
+
     if (!roomCode) {
       toast.error('Please enter a room code');
       return;
     }
-    
+
     console.log(`Attempting to join room ${roomCode} as ${username}`);
-    
-    // Use Socket.IO to join the room, not an API call
-    if (socket && socket.connected) {
-      console.log(`Emitting join-room event via socket:`, { roomCode, username });
-      socket.emit('join-room', { roomCode, username });
 
-      // Set up a listener for join success/error *before* navigating
-      // Add listeners only once to avoid duplication
-      if (!socket.hasListeners('joined-room')) {
-        socket.on('joined-room', (data) => {
-          console.log('Successfully joined room via socket:', data);
-          // Navigate immediately upon successful socket join
-          navigate(`/game/${roomCode}`, { state: { username, roomCode } });
-        });
-      }
-      
-      if (!socket.hasListeners('join-error')) {
-        socket.on('join-error', (error) => {
-          console.error('Error joining room via socket:', error);
-          toast.error(`Error joining room: ${error.message}. ${error.details || ''}`);
-          // Clear listeners on error to prevent lingering handlers
-          socket.off('joined-room');
-          socket.off('join-error');
-        });
-      }
+    // Save username and room code to localStorage for recovery
+    saveUsername(username);
+    localStorage.setItem('lastRoomCode', roomCode);
 
-      // Optional: Add a timeout in case the server doesn't respond
-      // If you need a timeout, consider implementing it carefully
-      // to avoid navigating prematurely or interfering with error handling.
-      
+    // Make sure socket is connected before joining
+    if (!socket.connected) {
+      console.log('Socket not connected, attempting to connect...');
+      socket.connect();
+
+      // Wait for connection before proceeding
+      socket.once('connect', () => {
+        joinRoomAndNavigate(roomCode, username);
+      });
+
+      // Handle connection error
+      socket.once('connect_error', (error) => {
+        console.error('Socket connection error:', error);
+        toast.error(`Connection error: ${error.message}. Try again.`);
+        setIsJoining(false);
+      });
     } else {
-      console.error('Socket not connected. Cannot join room.');
-      toast.error('Connection error. Please check your connection and refresh.');
+      // Socket already connected, proceed with join
+      joinRoomAndNavigate(roomCode, username);
     }
   };
-  
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-primary-100 to-accent-100 dark:from-gray-900 dark:to-gray-800">
       {/* Header */}
@@ -155,7 +180,7 @@ const HomePage = () => {
           <ThemeSwitcher />
         </div>
       </header>
-      
+
       {/* Main content */}
       <main className="flex-1 container mx-auto p-4 flex items-center justify-center">
         <div className="w-full max-w-md">
@@ -229,7 +254,7 @@ const HomePage = () => {
           </div>
         </div>
       </main>
-      
+
       {/* Footer */}
       <footer className="bg-gray-100 p-4 text-center">
         <p>&copy; {new Date().getFullYear()} Bingo Buzz. All rights reserved.</p>

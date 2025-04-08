@@ -45,6 +45,7 @@ const GamePage = () => {
   const [isHost, setIsHost] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Add loading state
 
   // Waiting room state
   const [waitingForPlayers, setWaitingForPlayers] = useState(true);
@@ -252,6 +253,47 @@ const GamePage = () => {
       }
     };
   }, [gameStarted, isMyTurn, roomCode]);
+
+  // Check for valid game session and redirect if needed
+  useEffect(() => {
+    // If no username or roomCode, try to recover from localStorage
+    if (!username || !roomCode) {
+      const storedUsername = localStorage.getItem('username');
+      const storedRoomCode = localStorage.getItem('lastRoomCode');
+
+      if (!storedUsername) {
+        // No username found, redirect to home page
+        toast.error('Session expired. Please enter your name again.');
+        navigate('/');
+        return;
+      }
+
+      if (storedUsername && !username) {
+        setUsername(storedUsername);
+      }
+
+      // If we have a stored room code but no current room code, redirect
+      if (storedRoomCode && !roomCode) {
+        navigate(`/game/${storedRoomCode}`);
+        return;
+      }
+    }
+
+    // Set a timeout to ensure loading state doesn't get stuck
+    const loadingTimeout = setTimeout(() => {
+      if (isLoading) {
+        console.log('Loading timeout reached, forcing loading state to false');
+        setIsLoading(false);
+
+        // If we're still loading after timeout, try to join the room again
+        if (roomCode && username && socket.connected) {
+          socket.emit('join-room', { roomCode, username });
+        }
+      }
+    }, 5000); // 5 second timeout
+
+    return () => clearTimeout(loadingTimeout);
+  }, [username, roomCode, navigate, isLoading]);
 
   // Monitor socket connection status with improved error handling
   useEffect(() => {
@@ -573,6 +615,7 @@ const GamePage = () => {
   const handleJoinedRoom = (data) => {
     console.log('Joined room:', data);
     setIsHost(data.isHost);
+    setIsLoading(false); // Set loading to false once we've joined the room
 
     // Normalize players
     const normalizedPlayers = Array.isArray(data.players)
@@ -1114,6 +1157,24 @@ const GamePage = () => {
       animate="animate"
       exit="exit"
     >
+      {/* Loading screen */}
+      {isLoading && (
+        <div className="fixed inset-0 flex items-center justify-center z-50"
+          style={{ backgroundColor: theme.colors.background }}
+        >
+          <div className="text-center p-8 rounded-xl shadow-lg"
+            style={{ backgroundColor: theme.colors.card }}
+          >
+            <div className="w-16 h-16 border-4 border-t-transparent rounded-full animate-spin mx-auto mb-4"
+              style={{ borderColor: `${theme.colors.primary} transparent transparent transparent` }}
+            ></div>
+            <h2 className="text-xl font-bold mb-2">Connecting to Game</h2>
+            <p className="text-sm opacity-75 mb-4">Please wait while we connect you to the game room...</p>
+            <p className="text-xs opacity-50">Room Code: {roomCode}</p>
+          </div>
+        </div>
+      )}
+
       {/* Confetti animation for winner */}
       {showConfetti && <Confetti width={window.innerWidth} height={window.innerHeight} />}
 
