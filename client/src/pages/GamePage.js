@@ -163,6 +163,31 @@ const GamePage = () => {
     const currentPlayerIndex = players.findIndex(p => p.id === currentTurn);
     if (currentPlayerIndex === -1) {
       console.warn('[forceNextTurn] Current player not found in players list');
+      // If we can't find the current player, just use the first player that's not the current socket
+      const otherPlayer = players.find(p => p.id !== socket.id);
+      if (otherPlayer) {
+        console.log(`[forceNextTurn] Using fallback: changing turn to ${otherPlayer.username}`);
+        setCurrentTurn(otherPlayer.id);
+        setIsMyTurn(otherPlayer.id === socket.id);
+
+        // Update game message
+        if (otherPlayer.id === socket.id) {
+          setGameMessage('Your turn! Click on a number.');
+        } else {
+          setGameMessage(`Waiting for ${otherPlayer.username} to choose a number...`);
+        }
+
+        // Reset any locks
+        isMarkingRef.current = false;
+        setIsMarking(false);
+
+        // Update the last turn change time
+        lastTurnChangeTimeRef.current = Date.now();
+
+        // Show a message to the user
+        toast('Turn changed manually due to connection issues', { icon: '🔄' });
+        return;
+      }
       return;
     }
 
@@ -197,7 +222,14 @@ const GamePage = () => {
 
     // Show a message to the user
     toast('Turn changed manually due to connection issues', { icon: '🔄' });
-  }, [currentTurn, players, socket.id]);
+
+    // Try to notify the server about the turn change
+    try {
+      socket.emit('end-turn', { roomCode });
+    } catch (e) {
+      console.error('[forceNextTurn] Error notifying server about turn change:', e);
+    }
+  }, [currentTurn, players, socket.id, roomCode]);
 
   // Add a periodic check for socket connection health
   useEffect(() => {
@@ -232,9 +264,9 @@ const GamePage = () => {
       const now = Date.now();
       const lastTurnTime = lastTurnChangeTimeRef.current || now;
 
-      // If it's been more than 15 seconds since the last turn change and it's my turn
-      if (now - lastTurnTime > 15000 && isMyTurn && isMarkingRef.current) {
-        console.warn('[Game State Check] Game appears to be stuck. Forcing recovery...');
+      // If it's been more than 10 seconds since the last turn change and it's my turn and I'm marking
+      if (now - lastTurnTime > 10000 && isMyTurn && isMarkingRef.current) {
+        console.warn('[Game State Check] Game appears to be stuck during my turn. Forcing recovery...');
 
         // Force release any locks
         isMarkingRef.current = false;
@@ -244,11 +276,23 @@ const GamePage = () => {
         toast.error('Game appears to be stuck. Recovering...');
 
         // Request a fresh game state from the server
-        socket.emit('request-game-state', { roomCode });
+        try {
+          socket.emit('request-game-state', { roomCode });
+        } catch (e) {
+          console.error('[Game State Check] Error requesting game state:', e);
+        }
       }
 
-      // If it's been more than 30 seconds since the last turn change (regardless of whose turn it is)
-      if (now - lastTurnTime > 30000) {
+      // If it's been more than 15 seconds since the last turn change and it's my turn (even if not marking)
+      if (now - lastTurnTime > 15000 && isMyTurn) {
+        console.warn('[Game State Check] My turn has been active for too long. Forcing turn change...');
+
+        // Force a turn change
+        forceNextTurn();
+      }
+
+      // If it's been more than 20 seconds since the last turn change (regardless of whose turn it is)
+      if (now - lastTurnTime > 20000) {
         console.warn('[Game State Check] Game has been stuck for too long. Forcing turn change...');
 
         // Force a turn change
@@ -1233,7 +1277,7 @@ const GamePage = () => {
           setIsMarking(false);
 
           // Show a message to the user
-          toast.error('The server took too long to respond. Please try again.');
+          toast.error('The server took too long to respond. Continuing game locally.');
 
           // Force mark the cell locally to keep the game moving
           console.log('[handleMarkNumber] Forcing local mark for cell:', { cellIndex, number });
@@ -1262,13 +1306,29 @@ const GamePage = () => {
             setLastMarkedNumber(null);
           }, 5000);
 
+          // Process the marked number locally
+          processMarkedNumbers([number], grid);
+
           // Force turn change after local marking
           if (isMyTurn) {
             console.log('[handleMarkNumber] Forcing turn change after local mark');
             forceNextTurn();
+
+            // Try to notify other players by emitting the event directly
+            try {
+              // Emit number-marked event directly to simulate server response
+              socket.emit('number-marked-local', {
+                roomCode,
+                number,
+                markedBy: socket.id,
+                automatic: false
+              });
+            } catch (e) {
+              console.error('[handleMarkNumber] Error emitting local mark:', e);
+            }
           }
         }
-      }, 2000); // Reduced to 2 seconds for faster recovery
+      }, 1500); // Reduced to 1.5 seconds for faster recovery
 
       // Emit mark-number event to the server
       console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number });
@@ -1399,6 +1459,7 @@ const GamePage = () => {
     socket.on('game-state', handleGameStateUpdate); // Use the consolidated handler
     socket.on('assign-grid', handleGridAssigned);
     socket.on('number-marked', handleNumberMarked); // Server should broadcast this
+    socket.on('number-marked-local', handleNumberMarked); // Also listen for local marks
     socket.on('turn-changed', handleTurnChanged);   // Server should broadcast this
     socket.on('game-over', handleGameOver);
     socket.on('game-error', handleError);
@@ -1446,6 +1507,7 @@ const GamePage = () => {
       socket.off('game-state', handleGameStateUpdate);
       socket.off('assign-grid', handleGridAssigned);
       socket.off('number-marked', handleNumberMarked);
+      socket.off('number-marked-local', handleNumberMarked);
       socket.off('turn-changed', handleTurnChanged);
       socket.off('game-over', handleGameOver);
       socket.off('game-error', handleError);
