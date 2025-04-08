@@ -11,15 +11,18 @@ import Timer from '../components/Timer';
 import WinnerModal from '../components/WinnerModal';
 import socket from '../utils/socket';
 
-// Add DEBUG flag at the top to control logging
+// DEBUG flag to control logging (set to false in production)
 const DEBUG = false;
+
+// Feature flags for UI enhancements
+const ENABLE_EMOJIS = false; // Set to true to enable emoji mode
 
 const GamePage = () => {
   const { roomCode } = useParams();
   const navigate = useNavigate();
   const { theme } = useContext(ThemeContext);
   const [username, setUsername] = useState(localStorage.getItem('username') || '');
-  
+
   // Game state
   const [grid, setGrid] = useState([]);
   const [isGridReady, setIsGridReady] = useState(false);
@@ -33,51 +36,52 @@ const GamePage = () => {
   const [winner, setWinner] = useState(null);
   const [winningLines, setWinningLines] = useState([]);
   const [markedHistory, setMarkedHistory] = useState([]);
+  const [lastMarkedNumber, setLastMarkedNumber] = useState(null);
   const [currentTurnName, setCurrentTurnName] = useState('');
   const [gameMessage, setGameMessage] = useState('');
-  
+
   // UI state
   const [symbols, setSymbols] = useState('numbers'); // 'numbers' or 'emojis'
   const [isHost, setIsHost] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
-  
+
   // Waiting room state
   const [waitingForPlayers, setWaitingForPlayers] = useState(true);
   const [readyPlayers, setReadyPlayers] = useState([]);
   const [isReady, setIsReady] = useState(false);
-  
+
   // State for tracking if a number is being marked (to prevent multiple clicks)
   const [isMarking, setIsMarking] = useState(false);
   const isMarkingRef = useRef(isMarking); // <<< Add ref for isMarking
   const turnCheckLog = useRef(''); // Ref to store log value
   // <<< Add ref for debounce timer >>>
   const markNumberDebounceTimerRef = useRef(null);
-  
+
   // Refs
   const timerIntervalRef = useRef(null);
   const audioRef = useRef(null);
   const hasJoinedRef = useRef(false);
-  
+
   // Add socket connection status tracking
   const [socketConnected, setSocketConnected] = useState(socket.connected);
   const [connectionStatus, setConnectionStatus] = useState(socket.connected ? 'Connected' : 'Disconnected');
-  
+
   // Queue for pending marked numbers that arrive before grid is ready
   const pendingMarkedNumbersRef = useRef([]);
-  
+
   const pageVariants = {
     initial: { opacity: 0, y: 20 },
-    animate: { 
-      opacity: 1, 
+    animate: {
+      opacity: 1,
       y: 0,
       transition: {
         duration: 0.5,
         staggerChildren: 0.2
       }
     },
-    exit: { 
-      opacity: 0, 
+    exit: {
+      opacity: 0,
       y: -20,
       transition: { duration: 0.3 }
     }
@@ -85,8 +89,8 @@ const GamePage = () => {
 
   const containerVariants = {
     initial: { opacity: 0, scale: 0.95 },
-    animate: { 
-      opacity: 1, 
+    animate: {
+      opacity: 1,
       scale: 1,
       transition: {
         duration: 0.3
@@ -96,8 +100,8 @@ const GamePage = () => {
 
   const headerVariants = {
     initial: { opacity: 0, y: -20 },
-    animate: { 
-      opacity: 1, 
+    animate: {
+      opacity: 1,
       y: 0,
       transition: {
         duration: 0.3,
@@ -105,20 +109,20 @@ const GamePage = () => {
       }
     }
   };
-  
+
   // Effect to keep isGridReadyRef updated with the latest state
   useEffect(() => {
     isGridReadyRef.current = isGridReady;
     if (DEBUG) console.log(`[Effect] isGridReady state changed to: ${isGridReady}, updated ref.`);
   }, [isGridReady]);
-  
+
   // <<< Add effect to keep isMarkingRef updated >>>
   useEffect(() => {
     isMarkingRef.current = isMarking;
     // Optional: Add debug log if needed
     console.log(`[Effect] isMarking state changed to: ${isMarking}. Ref updated.`);
   }, [isMarking]);
-  
+
   // Join game on mount
   useEffect(() => {
     if (!username) {
@@ -133,7 +137,7 @@ const GamePage = () => {
         return;
       }
     }
-    
+
     // Reset game state on mount
     setGrid([]);
     setIsGridReady(false); // Also resets the ref via the effect above
@@ -151,14 +155,14 @@ const GamePage = () => {
     setReadyPlayers([]);
     setIsReady(false);
     pendingMarkedNumbersRef.current = []; // Clear pending numbers on join/reset
-    
+
     // Only join room if we haven't already
     if (!hasJoinedRef.current) {
       console.log(`Joining room ${roomCode} as ${username}`);
       socket.emit('join-room', { roomCode, username });
       hasJoinedRef.current = true;
     }
-    
+
     // Set up Socket.io event listeners
     socket.on('grid-assigned', handleGridAssigned);
     socket.on('joined-room', handleJoinedRoom);
@@ -172,13 +176,13 @@ const GamePage = () => {
     socket.on('error', handleError);
     socket.on('player-ready', handlePlayerReady);
     socket.on('sync-marked-numbers', handleSyncMarkedNumbers);
-    
+
     // Add catch-all listener for debugging
     const handleAnyEvent = (eventName, ...args) => {
       console.log(`[Socket Received Event - DEBUG] Event: ${eventName}, Args:`, args);
     };
     socket.onAny(handleAnyEvent);
-    
+
     // Clean up on unmount
     return () => {
       socket.off('grid-assigned', handleGridAssigned);
@@ -200,28 +204,28 @@ const GamePage = () => {
       setIsGridReady(false);
     };
   }, [roomCode, username, navigate]);
-  
+
   // Updated timer effect with reduced logging
   useEffect(() => {
     let isActive = true;
-    
+
     const startTimer = () => {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
       }
-      
+
       // Reset timer to 15 seconds
       setTimer(15);
-      
+
       timerIntervalRef.current = setInterval(() => {
         if (!isActive) return;
-        
+
         setTimer((prev) => {
           const newValue = Math.max(0, prev - 1);
           // Only log when DEBUG is true
           if (DEBUG) console.log(`Timer: ${newValue}, Is my turn: ${isMyTurn}`);
-          
+
           // Only emit end-turn if it's my turn and timer reaches 0
           if (newValue === 0 && isMyTurn && socket.connected) {
             if (DEBUG) console.log('Timer reached zero, ending turn automatically');
@@ -239,7 +243,7 @@ const GamePage = () => {
       if (DEBUG) console.log('Starting timer for my turn');
       startTimer();
     }
-    
+
     return () => {
       isActive = false;
       if (timerIntervalRef.current) {
@@ -248,67 +252,120 @@ const GamePage = () => {
       }
     };
   }, [gameStarted, isMyTurn, roomCode]);
-  
-  // Monitor socket connection status
+
+  // Monitor socket connection status with improved error handling
   useEffect(() => {
     // Check initial connection status
     setSocketConnected(socket.connected);
-    
+    setConnectionStatus(socket.connected ? 'Connected' : 'Disconnected');
+
+    // Connection handler with improved recovery
     const handleConnect = () => {
-      console.log('Socket connected');
+      if (DEBUG) {
+        console.log('Socket connected');
+      }
       setSocketConnected(true);
-      
+      setConnectionStatus('Connected');
+      toast.success('Connected to game server');
+
       // If we're in a game, try to rejoin with explicit grid request
       if (roomCode && username) {
-        console.log('Attempting to rejoin game after reconnection');
-        socket.emit('rejoin-room', { roomCode, username });
-        
-        // Explicitly request grid and marked numbers after reconnection
+        if (DEBUG) {
+          console.log('Attempting to rejoin game after reconnection');
+        }
+
+        // Show reconnection message to user
+        toast.info('Reconnecting to game...', { icon: '🔄' });
+
+        // Emit rejoin event with all necessary data
+        socket.emit('rejoin-room', {
+          roomCode,
+          username,
+          reconnect: true,
+          previousSocketId: socket.id
+        });
+
+        // Explicitly request game state after reconnection with a delay
+        // to ensure server has processed the rejoin request
         setTimeout(() => {
-          console.log('Explicitly requesting grid and marked numbers after reconnection');
-          socket.emit('request-grid', { roomCode });
-          socket.emit('request-marked-numbers', { roomCode });
+          if (DEBUG) {
+            console.log('Requesting game state after reconnection');
+          }
+          socket.emit('request-game-state', { roomCode, username });
         }, 1000);
       }
     };
-    
+
+    // Disconnect handler with improved user feedback
     const handleDisconnect = (reason) => {
-      console.log('Socket disconnected:', reason);
+      if (DEBUG) {
+        console.log('Socket disconnected:', reason);
+      }
       setSocketConnected(false);
-      toast.error('Connection lost. Attempting to reconnect...');
-      
+      setConnectionStatus(`Disconnected: ${reason}`);
+
+      // Only show error for non-temporary disconnects
+      if (reason !== 'transport close' && reason !== 'ping timeout') {
+        toast.error('Connection lost. Attempting to reconnect...', {
+          duration: 3000,
+          icon: '📶'
+        });
+      }
+
       // Clear timer and pause game state
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
       }
+
+      // Set UI state to show connection issue
+      setGameMessage('Connection issue. Waiting to reconnect...');
     };
-    
+
     // Add connection event listeners
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
-    
+
+    // Add more detailed connection status listeners
+    socket.on('connect_error', (error) => {
+      if (DEBUG) {
+        console.error('Socket connection error:', error);
+      }
+      setConnectionStatus(`Connection Error: ${error.message}`);
+      setGameMessage(`Connection error: ${error.message}. Trying to reconnect...`);
+    });
+
+    socket.on('reconnect_attempt', (attemptNumber) => {
+      if (DEBUG) {
+        console.log(`Reconnection attempt ${attemptNumber}`);
+      }
+      setConnectionStatus(`Reconnecting (Attempt ${attemptNumber})...`);
+    });
+
     // Try to connect if not already connected
     if (!socket.connected) {
-      console.log('Socket not connected, attempting to connect');
+      if (DEBUG) {
+        console.log('Socket not connected, attempting to connect');
+      }
       socket.connect();
     } else {
-      // If already connected, explicitly request grid and marked numbers
+      // If already connected, explicitly request game state
       if (roomCode) {
-        console.log('Socket already connected, explicitly requesting grid and game state');
+        if (DEBUG) {
+          console.log('Socket already connected, requesting game state');
+        }
         setTimeout(() => {
-          socket.emit('request-grid', { roomCode });
-          socket.emit('request-marked-numbers', { roomCode });
+          socket.emit('request-game-state', { roomCode, username });
         }, 500);
       }
     }
-    
+
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
     };
   }, [roomCode, username]);
-  
+
   // Handle game ended event
   useEffect(() => {
     const handleGameEnded = (data) => {
@@ -336,7 +393,7 @@ const GamePage = () => {
       socket.off('game-ended', handleGameEnded);
     };
   }, [navigate]);
-  
+
   // Event handler functions
   const handleGridAssigned = useCallback((assignedGrid) => {
     if (DEBUG) console.log('[handleGridAssigned] Received grid:', assignedGrid);
@@ -361,7 +418,7 @@ const GamePage = () => {
     }
   }, [roomCode]); // Add dependencies if needed, e.g., processMarkedNumbers if it's not stable
 
-  // Separate function to process marked numbers 
+  // Separate function to process marked numbers
   // Ensure this function doesn't rely on stale state if called from useCallback handlers
   const processMarkedNumbers = (numbers, currentGrid) => {
     // Add guard clause for invalid grid early
@@ -370,7 +427,7 @@ const GamePage = () => {
       return;
     }
     console.log('[processMarkedNumbers] Processing numbers:', numbers, 'with grid:', currentGrid);
-    
+
     // Ensure grid is treated as 2D array for findIndex logic if necessary
     // Assuming grid is flat array based on previous code:
     const flatGrid = currentGrid.flat(); // Flatten if grid is 2D, okay if already flat
@@ -399,7 +456,7 @@ const GamePage = () => {
         setMarkedCells(prev => {
             const updatedSet = new Set(prev);
             newMarkedIndices.forEach(index => updatedSet.add(index));
-            return Array.from(updatedSet); 
+            return Array.from(updatedSet);
         });
         // Use functional update for markedHistory
         setMarkedHistory(prev => [...prev, ...newHistoryNumbers]);
@@ -409,7 +466,7 @@ const GamePage = () => {
   // Handle receiving a marked number from the server
   // Use useCallback to potentially stabilize the function reference if needed as dependency elsewhere
   // Update destructuring to only expect number, markedBy, automatic
-  const handleNumberMarked = useCallback(({ number, markedBy, automatic }) => { 
+  const handleNumberMarked = useCallback(({ number, markedBy, automatic }) => {
     // Use the REF here to check grid readiness
     // Log received data
     console.log(`[handleNumberMarked] Received event. Number: ${number}, MarkedBy: ${markedBy}, Automatic: ${automatic}. Checking grid readiness... Current isGridReadyRef.current: ${isGridReadyRef.current}`);
@@ -417,7 +474,7 @@ const GamePage = () => {
     if (isGridReadyRef.current) {
       // Grid is ready. Use functional setGrid to access the LATEST grid state
       console.log('[handleNumberMarked] Grid IS ready (ref check). Using setGrid to access latest grid state for processing.');
-      setGrid(currentGrid => { 
+      setGrid(currentGrid => {
         // Now we are guaranteed to have the most up-to-date grid
         processMarkedNumbers([number], currentGrid);
         // setIsMarking(false); // <<< REMOVE from here
@@ -428,7 +485,7 @@ const GamePage = () => {
       // Check ref value right before setting state
       console.log(`[handleNumberMarked] isMarkingRef.current BEFORE direct set & setIsMarking(false): ${isMarkingRef.current}`);
       // --- Try direct ref update FIRST ---
-      isMarkingRef.current = false; 
+      isMarkingRef.current = false;
       // --- Now set state ---
       setIsMarking(false);
       console.log(`[handleNumberMarked] Successfully called setIsMarking(false). Ref is now: ${isMarkingRef.current}`);
@@ -445,19 +502,19 @@ const GamePage = () => {
       // Check ref value right before setting state
       console.log(`[handleNumberMarked - Grid Not Ready] isMarkingRef.current BEFORE direct set & setIsMarking(false): ${isMarkingRef.current}`);
       // --- Try direct ref update FIRST ---
-      isMarkingRef.current = false; 
+      isMarkingRef.current = false;
       // --- Now set state ---
       setIsMarking(false);
       console.log(`[handleNumberMarked - Grid Not Ready] Successfully called setIsMarking(false). Ref is now: ${isMarkingRef.current}`);
     }
   // Keep grid dependency for useCallback, even though we access latest via setGrid now.
   // This ensures the callback reference updates if grid reference changes, which is still correct.
-  }, [grid, markedHistory]); 
+  }, [grid, markedHistory]);
 
   // Handle receiving a full sync of marked numbers
   const handleSyncMarkedNumbers = useCallback(({ markedNumbers }) => {
     // Use the REF here
-    console.log(`[handleSyncMarkedNumbers] Received sync event with ${markedNumbers?.length} numbers. Checking grid readiness... Current isGridReadyRef.current: ${isGridReadyRef.current}`); 
+    console.log(`[handleSyncMarkedNumbers] Received sync event with ${markedNumbers?.length} numbers. Checking grid readiness... Current isGridReadyRef.current: ${isGridReadyRef.current}`);
     if (Array.isArray(markedNumbers)) {
         if (isGridReadyRef.current) {
             // Grid is ready. Use functional setGrid to access the LATEST grid state
@@ -476,8 +533,8 @@ const GamePage = () => {
         console.error('[handleSyncMarkedNumbers] Received invalid markedNumbers data:', markedNumbers);
     }
   // Keep grid dependency for useCallback
-  }, [grid, markedHistory]); 
-  
+  }, [grid, markedHistory]);
+
   // Fix player mapping in the waiting room section
   const normalizePlayer = (player) => {
     // If player is just a string, convert to object format
@@ -494,13 +551,13 @@ const GamePage = () => {
   const handleJoinedRoom = (data) => {
     console.log('Joined room:', data);
     setIsHost(data.isHost);
-    
+
     // Normalize players
-    const normalizedPlayers = Array.isArray(data.players) 
+    const normalizedPlayers = Array.isArray(data.players)
       ? data.players.map(p => normalizePlayer(p))
       : [];
     setPlayers(normalizedPlayers);
-    
+
     // Reset grid/ready state before processing joined-room data
     setGrid([]);
     setIsGridReady(false);
@@ -509,20 +566,20 @@ const GamePage = () => {
     if (data.grid && Array.isArray(data.grid) && data.grid.length > 0) {
         console.log('Setting grid from joined-room event.');
         // Directly call handleGridAssigned to ensure consistent logic including pending number processing
-        handleGridAssigned(data.grid); 
+        handleGridAssigned(data.grid);
     } else {
         console.warn('No valid grid data in joined-room event:', data);
         // Explicitly request grid if none provided
          socket.emit('request-grid', { roomCode });
     }
-    
+
     // If game is already in progress, request sync
     if (data.gameStarted) {
       setWaitingForPlayers(false);
       setGameStarted(true);
       console.log('Game already started on join, requesting marked numbers sync.');
       socket.emit('request-marked-numbers', { roomCode }); // Request full state
-      
+
       // Set turn info if available
        if (data.currentTurn) {
          setCurrentTurn(data.currentTurn);
@@ -535,68 +592,68 @@ const GamePage = () => {
       setWaitingForPlayers(true);
       setGameStarted(false);
     }
-    
+
     // Update ready players list
     if (data.readyPlayers) {
       setReadyPlayers(data.readyPlayers);
       setIsReady(data.readyPlayers.includes(username));
     }
-    
+
     toast.success(`Joined room: ${roomCode}`);
   };
-  
+
   const handlePlayerJoined = (data) => {
     console.log('Player joined event data:', data);
-    
+
     // Check if data has the new structure (object with player and players properties)
     // or the old structure (direct array of players)
     const updatedPlayers = Array.isArray(data) ? data : data.players;
-    
+
     if (!Array.isArray(updatedPlayers)) {
       console.error('Invalid players data received:', data);
       return;
     }
-    
+
     // Normalize players
     const normalizedPlayers = updatedPlayers.map(p => normalizePlayer(p));
-    
+
     console.log('Setting players to:', normalizedPlayers);
     setPlayers(normalizedPlayers);
-    
+
     // If a new player joined, show a toast
     if (!Array.isArray(data) && data.player) {
       toast(`${data.player.username || data.player} joined the game`);
     }
-    
+
     // Check if this player is the host (first player)
     if (normalizedPlayers.length > 0) {
       const firstPlayer = normalizedPlayers[0];
       const isFirstPlayer = firstPlayer.id === socket.id;
       setIsHost(isFirstPlayer);
-      
+
       if (isFirstPlayer) {
         console.log('You are the host');
         setGameMessage('You are the host. Start the game when ready.');
       }
     }
   };
-  
+
   const handlePlayerLeft = (data) => {
     console.log('Player left event data:', data);
-    
+
     // Handle both data structures
     const updatedPlayers = Array.isArray(data) ? data : data.players;
     const disconnectedId = data.disconnectedId;
-    
+
     if (!Array.isArray(updatedPlayers)) {
       console.error('Invalid players data received:', data);
       return;
     }
-    
+
     console.log('Updated players:', updatedPlayers);
     setPlayers(updatedPlayers);
     toast(`A player has left the game`);
-    
+
     // If the host left and this player is now first, they become the new host
     if (updatedPlayers.length > 0 && updatedPlayers[0].id === socket.id) {
       setIsHost(true);
@@ -604,12 +661,12 @@ const GamePage = () => {
       setGameMessage('You are the host. Start the game when ready.');
     }
   };
-  
+
   const handleGameStarted = (data) => {
     console.log('Game started:', data);
     setWaitingForPlayers(false); // Ensure waiting room UI is hidden
     setGameStarted(true);
-    
+
     // Reset relevant game state for a fresh start
     setWinner(null);
     setWinningLines([]);
@@ -626,7 +683,7 @@ const GamePage = () => {
         console.warn('No grid data in game-started event and grid not ready. Requesting grid.');
         socket.emit('request-grid', { roomCode });
     }
-    
+
     // Set initial turn
     if (data.currentTurn) {
       setCurrentTurn(data.currentTurn);
@@ -639,26 +696,26 @@ const GamePage = () => {
     } else {
         setGameMessage('Game started! Waiting for first turn...');
     }
-    
+
     toast.success('Game started!');
-    
+
     // Play start sound
     if (audioRef.current) {
       audioRef.current.play().catch(e => console.log('Audio play error:', e));
     }
   };
-  
+
   const handleTurnChanged = (data) => {
     console.log('Turn changed:', data);
-    
+
     // Update current turn with the player ID
     const newCurrentTurn = data.currentTurn || data.playerId;
     setCurrentTurn(newCurrentTurn);
-    
+
     // Check if it's my turn
     const isMyTurnNow = newCurrentTurn === socket.id;
     setIsMyTurn(isMyTurnNow);
-    
+
     if (isMyTurnNow) {
       console.log('It is now MY turn!');
       // Reset timer when it's my turn
@@ -669,56 +726,92 @@ const GamePage = () => {
       const playerName = currentPlayer ? currentPlayer.username : 'Unknown';
       setGameMessage(`Waiting for ${playerName} to choose a number...`);
     }
-    
+
     // If players array is provided in the data, update it
     if (data.players) {
       setPlayers(data.players);
     }
   };
-  
+
   const handleGameWon = ({ player, lines, score }) => {
     console.log('Game won by:', player.username);
     setWinner(player);
     setWinningLines(lines);
     setShowConfetti(true);
-    
+
     // Hide confetti after 10 seconds
     setTimeout(() => {
       setShowConfetti(false);
     }, 10000);
-    
+
     toast.success(`${player.username} won with a score of ${score}!`);
     setGameMessage(`${player.username} won the game!`);
   };
-  
+
   const handleError = (message) => {
-    console.error('Game error:', message);
-    toast.error(message); // Show user-friendly error
-    setGameMessage(message);
-    console.log('[handleError] Attempting to set isMarking to false due to error.');
-    // Check ref value right before direct set & state change
-    console.log(`[handleError] isMarkingRef.current BEFORE direct set & setIsMarking(false): ${isMarkingRef.current}`);
-    // If the error might be related to an invalid action (like marking), release the lock
-    // --- Try direct ref update FIRST ---
-    isMarkingRef.current = false; 
-    // --- Now set state ---
-    setIsMarking(false); // <<< Release lock on error
-    // Log ref value after direct set & state change
-    console.log(`[handleError] Successfully called setIsMarking(false). Ref is now: ${isMarkingRef.current}`);
+    // Only log in debug mode
+    if (DEBUG) {
+      console.error('Game error:', message);
+    }
+
+    // Show user-friendly error with more context
+    const errorMsg = typeof message === 'string' ? message : 'An error occurred';
+    toast.error(errorMsg, {
+      duration: 5000, // Show longer for errors
+      style: {
+        border: `2px solid ${theme.colors.error || '#ef4444'}`,
+        padding: '16px',
+        color: theme.colors.text
+      },
+      icon: '⚠️'
+    });
+
+    // Update game message for UI display
+    setGameMessage(errorMsg);
+
+    // Release any locks that might be preventing further interaction
+    if (isMarkingRef.current) {
+      if (DEBUG) {
+        console.log('[handleError] Releasing isMarking lock due to error');
+      }
+      isMarkingRef.current = false;
+      setIsMarking(false);
+    }
+
+    // Clear any pending timers
+    if (markNumberDebounceTimerRef.current) {
+      clearTimeout(markNumberDebounceTimerRef.current);
+      markNumberDebounceTimerRef.current = null;
+    }
+
+    // Attempt recovery based on error type
+    if (errorMsg.includes('connection') || errorMsg.includes('disconnect')) {
+      // Connection-related errors
+      if (socket && !socket.connected) {
+        toast.info('Attempting to reconnect...', { icon: '🔄' });
+        socket.connect();
+      }
+    } else if (errorMsg.includes('game state') || errorMsg.includes('sync')) {
+      // Game state errors - request a fresh sync
+      if (socket && socket.connected && roomCode) {
+        toast.info('Requesting game state update...', { icon: '🔄' });
+        socket.emit('request-game-state', { roomCode });
+      }
+    }
   };
-  
+
   // Handle exiting the game and returning to home page
   const handleExitGame = () => {
     navigate('/');
   };
-  
+
   // Handle player ready state changes
   const handlePlayerReady = ({ username: readyUsername, readyPlayers }) => {
     console.log(`[Socket Event Received] Player ready update: ${readyUsername}, Ready players:`, readyPlayers);
-    
+
     if (Array.isArray(readyPlayers)) {
       setReadyPlayers(readyPlayers);
-      
+
       // Check if I'm the player who toggled ready status
       if (readyUsername === username) {
         const amIReady = readyPlayers.includes(username);
@@ -733,7 +826,7 @@ const GamePage = () => {
       console.error('[handlePlayerReady] Invalid readyPlayers data received:', readyPlayers);
     }
   };
-  
+
   // Toggle ready status
   const handleToggleReady = useCallback(() => {
     if (!socket.connected) {
@@ -743,15 +836,15 @@ const GamePage = () => {
     }
     const newState = !isReady;
     console.log(`[handleToggleReady] Toggling ready status. Current: ${isReady}, New: ${newState}`);
-    
+
     // Optimistically update local state for immediate feedback
-    setIsReady(newState); 
-    
+    setIsReady(newState);
+
     // Emit the event to the server - ** Use 'toggle-ready' **
     console.log('[handleToggleReady] Emitting toggle-ready event to server:', { roomCode, username, isReady: newState });
     socket.emit('toggle-ready', { roomCode, username, isReady: newState });
   }, [isReady, roomCode, username]);
-  
+
   // Start the game (host only)
   const handleStartGame = useCallback(() => {
     if (!socket.connected) {
@@ -760,13 +853,13 @@ const GamePage = () => {
     }
     // Add check: only host can start, and only if enough players are ready
     // (This check might be better enforced on the server too)
-    if (isHost) { 
+    if (isHost) {
     socket.emit('start-game', { roomCode });
     } else {
       toast.error('Only the host can start the game.');
     }
   }, [isHost, roomCode]);
-  
+
   // Copy room code to clipboard
   const handleCopyRoomCode = () => {
     navigator.clipboard.writeText(roomCode).then(() => {
@@ -775,7 +868,7 @@ const GamePage = () => {
       setTimeout(() => setCopySuccess(false), 2000);
     });
   };
-  
+
   // Handle marking a number - NOW WITH DEBOUNCING
   const handleMarkNumber = useCallback((cellIndex, number) => {
     // Clear any existing debounce timer
@@ -819,11 +912,11 @@ const GamePage = () => {
   // Dependencies for the outer useCallback wrapper remain the same
   // The inner logic accesses state/refs directly when it runs
   }, [isMyTurn, gameStarted, roomCode]);
-  
+
   // Add connection status indicator to UI
   const ConnectionStatus = () => (
     <div className="fixed bottom-4 right-4 z-50">
-      <div 
+      <div
         className={`px-3 py-1 rounded-full text-sm font-medium flex items-center ${
           socketConnected ? 'bg-green-500' : 'bg-red-500'
         } text-white`}
@@ -835,7 +928,7 @@ const GamePage = () => {
       </div>
     </div>
   );
-  
+
   // Effect for Socket Listeners
   useEffect(() => {
     if (!socket) return;
@@ -860,7 +953,7 @@ const GamePage = () => {
             // Optionally handle initial state sync received in response here
             if (response.gameState) {
               // Example: sync state if server sends it on rejoin
-              // handleGameStateUpdate(response.gameState); 
+              // handleGameStateUpdate(response.gameState);
             }
           } else {
             console.error('[Socket Rejoin Callback] Failed to rejoin room:', response?.message);
@@ -892,7 +985,7 @@ const GamePage = () => {
     socket.on('game-error', handleError);
     socket.on('player-joined', handlePlayerJoined);
     socket.on('player-left', handlePlayerLeft);
-    socket.on('player-ready-update', handlePlayerReadyUpdate); 
+    socket.on('player-ready-update', handlePlayerReadyUpdate);
     socket.on('game-started', handleGameStarted);
     socket.on('sync-marked-numbers', handleSyncMarkedNumbers); // Listen for full sync
     socket.on('turn-started', handleTurnStarted);
@@ -956,8 +1049,48 @@ const GamePage = () => {
   }, [socket, roomCode, username, handleGameStateUpdate, handleGridAssigned, handleNumberMarked, handleTurnChanged, handleGameOver, handleError, handlePlayerJoined, handlePlayerLeft, handlePlayerReadyUpdate, handleGameStarted, handleSyncMarkedNumbers, handleTurnStarted]);
 
   // Implement missing game event handlers
+  // Handle receiving a marked number from the server
+  const handleNumberMarked = useCallback((data) => {
+    if (DEBUG) {
+      console.log('Number marked:', data);
+    }
+
+    // Update marked cells
+    if (data.markedCells) {
+      setMarkedCells(data.markedCells);
+    }
+
+    // Update turn
+    if (data.currentTurn) {
+      setCurrentTurn(data.currentTurn);
+      setIsMyTurn(data.currentTurn === socket.id);
+    }
+
+    // Update timer
+    if (data.timer) {
+      setTimer(data.timer);
+    }
+
+    // Add to history and set last marked number for highlighting
+    if (data.number) {
+      setMarkedHistory(prev => [...prev, data.number]);
+      setLastMarkedNumber(data.number);
+
+      // Clear the last marked number highlight after 3 seconds
+      setTimeout(() => {
+        setLastMarkedNumber(null);
+      }, 3000);
+    }
+
+    // Release marking lock
+    isMarkingRef.current = false;
+    setIsMarking(false);
+  }, []);
+
   const handleGameStateUpdate = useCallback((gameState) => {
-    console.log('Game state updated:', gameState);
+    if (DEBUG) {
+      console.log('Game state updated:', gameState);
+    }
     if (gameState.grid) setGrid(gameState.grid);
     if (gameState.markedNumbers) setMarkedCells(Array.from(gameState.markedNumbers));
     if (gameState.currentTurn) setCurrentTurn(gameState.currentTurn);
@@ -975,8 +1108,8 @@ const GamePage = () => {
   }, []);
 
   const handlePlayerReadyUpdate = useCallback(({ playerId, isReady }) => {
-    setPlayers(prevPlayers => 
-      prevPlayers.map(player => 
+    setPlayers(prevPlayers =>
+      prevPlayers.map(player =>
         player.id === playerId ? { ...player, isReady } : player
       )
     );
@@ -987,9 +1120,9 @@ const GamePage = () => {
     setCurrentTurnName(playerName);
     setTimer(15); // Reset timer for new turn
   }, [socket.id]);
-  
+
   return (
-    <motion.div 
+    <motion.div
       className="min-h-screen py-8 px-4 relative overflow-hidden"
       style={{ backgroundColor: theme.colors.background }}
       variants={pageVariants}
@@ -999,26 +1132,26 @@ const GamePage = () => {
     >
       {/* Confetti animation for winner */}
       {showConfetti && <Confetti width={window.innerWidth} height={window.innerHeight} />}
-      
+
       <div className="max-w-6xl mx-auto">
-        <motion.header 
+        <motion.header
           className="flex flex-col md:flex-row justify-between items-center mb-8"
           variants={headerVariants}
         >
           <div>
             <h1 className="text-3xl font-bold mb-2">Bingo Room: {roomCode}</h1>
             <p className="text-sm opacity-70">
-              {waitingForPlayers 
-                ? `Waiting for players (${readyPlayers.length}/${players.length} ready)` 
-                : gameStarted 
-                  ? currentTurnName 
-                    ? `${currentTurnName}'s turn` 
-                    : "Game in progress" 
+              {waitingForPlayers
+                ? `Waiting for players (${readyPlayers.length}/${players.length} ready)`
+                : gameStarted
+                  ? currentTurnName
+                    ? `${currentTurnName}'s turn`
+                    : "Game in progress"
                   : "Game ended"
               }
             </p>
           </div>
-          
+
           <div className="flex items-center mt-4 md:mt-0">
             <button
               onClick={handleCopyRoomCode}
@@ -1030,11 +1163,11 @@ const GamePage = () => {
             >
               {copySuccess ? 'Copied!' : 'Copy Room Code'}
             </button>
-            
+
             <ThemeSwitcher className="ml-2" />
           </div>
         </motion.header>
-        
+
         {gameMessage && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -1048,7 +1181,7 @@ const GamePage = () => {
             {gameMessage}
           </motion.div>
         )}
-        
+
         {/* WAITING ROOM SECTION */}
         {waitingForPlayers && (
           <motion.div
@@ -1070,7 +1203,7 @@ const GamePage = () => {
                 ) : (
                   <ul className="space-y-2">
                     {players.map((player, index) => (
-                      <li 
+                      <li
                         key={index}
                         className="p-3 rounded-lg flex items-center justify-between"
                         style={{
@@ -1100,7 +1233,7 @@ const GamePage = () => {
                 )}
               </div>
             </div>
-            
+
             <div
               className="rounded-xl p-6 backdrop-blur-md bg-opacity-80"
               style={{
@@ -1115,8 +1248,35 @@ const GamePage = () => {
                 <p className="mb-2">Your Username: <span className="font-medium">{username}</span></p>
                 <p className="mb-2">Total Players: <span className="font-medium">{players.length}</span></p>
                 <p className="mb-2">Ready Players: <span className="font-medium">{readyPlayers.length}/{players.length}</span></p>
+
+                {/* Connection status indicator */}
+                <div className="mt-4 flex items-center">
+                  <div
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{
+                      backgroundColor: socketConnected ? theme.colors.success : theme.colors.error || '#ef4444',
+                      boxShadow: socketConnected ? '0 0 6px 2px rgba(0, 255, 0, 0.3)' : '0 0 6px 2px rgba(255, 0, 0, 0.3)'
+                    }}
+                  />
+                  <span className="text-sm">
+                    {socketConnected ? 'Connected' : connectionStatus}
+                  </span>
+                </div>
+
+                {/* Game message display */}
+                {gameMessage && (
+                  <div
+                    className="mt-3 p-2 rounded-md text-sm"
+                    style={{
+                      backgroundColor: `${theme.colors.card}80`,
+                      border: `1px solid ${theme.colors.border}`
+                    }}
+                  >
+                    {gameMessage}
+                  </div>
+                )}
               </div>
-              
+
               <div className="flex flex-col space-y-3 mt-8">
                 {isHost ? (
                   <>
@@ -1130,7 +1290,7 @@ const GamePage = () => {
                     >
                       {isReady ? 'I\'m Not Ready' : 'I\'m Ready'}
                     </button>
-                    
+
                     <button
                       onClick={handleStartGame}
                       disabled={readyPlayers.length < 1}
@@ -1155,7 +1315,7 @@ const GamePage = () => {
                     {isReady ? 'I\'m Not Ready' : 'I\'m Ready'}
                   </button>
                 )}
-                
+
                 <button
                   onClick={() => navigate('/')}
                   className="w-full py-2 rounded-lg font-medium"
@@ -1171,19 +1331,19 @@ const GamePage = () => {
             </div>
           </motion.div>
         )}
-        
+
         {/* GAME SECTION - Only show if waiting room is done */}
         {!waitingForPlayers && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
             <motion.div
               variants={containerVariants}
-              className="lg:col-span-2"
+              className="lg:col-span-2 order-2 lg:order-1"
             >
               <div
-                className="rounded-xl p-4 sm:p-6 backdrop-blur-md bg-opacity-80"
+                className="rounded-xl p-4 sm:p-6 backdrop-blur-md bg-opacity-80 shadow-lg"
                 style={{
                   backgroundColor: theme.colors.card,
-                  boxShadow: theme.effects?.cardShadow,
+                  boxShadow: theme.effects?.cardShadow || '0 4px 6px rgba(0,0,0,0.1)',
                   border: `2px solid ${theme.colors.border}`
                 }}
               >
@@ -1204,8 +1364,8 @@ const GamePage = () => {
                       </motion.div>
                     )}
                   </div>
-                  
-                  {gameStarted && 
+
+                  {gameStarted &&
                     <div className="w-32">
                       <Timer timeLeft={timer} />
                     </div>
@@ -1221,18 +1381,20 @@ const GamePage = () => {
                       winningLines={winningLines}
                       isInteractionDisabled={isMarking}
                       isMyTurn={isMyTurn}
+                      useEmojis={ENABLE_EMOJIS}
+                      lastMarkedNumber={lastMarkedNumber}
                     />
                   </div>
                 </div>
               </div>
             </motion.div>
 
-            <motion.div variants={containerVariants}>
+            <motion.div variants={containerVariants} className="order-1 lg:order-2">
               <div
-                className="rounded-xl p-6 backdrop-blur-md bg-opacity-80"
+                className="rounded-xl p-4 md:p-6 backdrop-blur-md bg-opacity-80 shadow-lg"
                 style={{
                   backgroundColor: theme.colors.card,
-                  boxShadow: theme.effects?.cardShadow,
+                  boxShadow: theme.effects?.cardShadow || '0 4px 6px rgba(0,0,0,0.1)',
                   border: `2px solid ${theme.colors.border}`
                 }}
               >
@@ -1243,10 +1405,10 @@ const GamePage = () => {
           </div>
         )}
       </div>
-      
+
       {/* Audio elements */}
       <audio ref={audioRef} src="/sounds/game-start.mp3" preload="auto" />
-      
+
       {/* Connection status indicator */}
       <ConnectionStatus />
     </motion.div>

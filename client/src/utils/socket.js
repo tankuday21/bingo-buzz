@@ -1,8 +1,8 @@
 import { io } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
 
-// Add DEBUG flag to control logging
-const DEBUG = true;
+// DEBUG flag to control logging (set to false in production)
+const DEBUG = false;
 
 // Get server URL from environment
 const SERVER_URL = process.env.REACT_APP_SERVER_URL;
@@ -12,7 +12,10 @@ if (!SERVER_URL) {
   toast.error('Server configuration error. Please check console.');
 }
 
-console.log('Connecting to server:', SERVER_URL);
+// Only log server connection in debug mode
+if (DEBUG) {
+  console.log('Connecting to server:', SERVER_URL);
+}
 
 // Configure socket with optimized settings
 const socket = io(SERVER_URL, {
@@ -27,7 +30,9 @@ const socket = io(SERVER_URL, {
 
 // Connection event handlers
 socket.on('connect', () => {
-  console.log('Socket connected successfully, ID:', socket.id);
+  if (DEBUG) {
+    console.log('Socket connected successfully, ID:', socket.id);
+  }
   toast.success('Connected to game server');
 });
 
@@ -37,16 +42,33 @@ socket.on('connect_error', (error) => {
 });
 
 socket.on('disconnect', (reason) => {
-  console.log('Socket disconnected:', reason);
+  if (DEBUG) {
+    console.log('Socket disconnected:', reason);
+  }
   if (reason === 'io server disconnect') {
     // Server initiated disconnect, try to reconnect
     socket.connect();
   }
-  toast.error('Disconnected from server');
+
+  // Only show toast for certain disconnect reasons to avoid spamming the user
+  if (reason !== 'transport close' && reason !== 'ping timeout') {
+    toast.error('Disconnected from server');
+  }
+
+  // Attempt to reconnect automatically for temporary disconnects
+  if (reason === 'transport close' || reason === 'ping timeout') {
+    setTimeout(() => {
+      if (!socket.connected) {
+        socket.connect();
+      }
+    }, 2000);
+  }
 });
 
 socket.on('reconnect', (attemptNumber) => {
-  console.log('Socket reconnected after', attemptNumber, 'attempts');
+  if (DEBUG) {
+    console.log('Socket reconnected after', attemptNumber, 'attempts');
+  }
   toast.success('Reconnected to server');
 });
 
@@ -61,12 +83,21 @@ socket.on('error', (error) => {
 });
 
 // Connection health check
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
 const healthCheck = setInterval(() => {
   if (socket.connected) {
     socket.emit('ping');
+    reconnectAttempts = 0; // Reset reconnect attempts when connected
   } else {
-    clearInterval(healthCheck);
-    toast.error('Connection lost. Please refresh the page.');
+    reconnectAttempts++;
+    if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+      // Try to reconnect
+      socket.connect();
+    } else {
+      clearInterval(healthCheck);
+      toast.error('Connection lost. Please refresh the page.');
+    }
   }
 }, 25000);
 

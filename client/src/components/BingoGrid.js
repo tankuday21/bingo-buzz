@@ -4,7 +4,7 @@ import { ThemeContext } from '../context/ThemeContext';
 
 // Emoji mapping for numbers (if selected)
 const emojiMap = {
-  1: '😀', 2: '😎', 3: '🚀', 4: '⭐', 5: '🔥', 
+  1: '😀', 2: '😎', 3: '🚀', 4: '⭐', 5: '🔥',
   6: '🎮', 7: '🎵', 8: '🎲', 9: '🎯', 10: '💖',
   11: '🌈', 12: '🦄', 13: '🍕', 14: '🍦', 15: '🏆',
   16: '🎁', 17: '🎪', 18: '🎭', 19: '🧸', 20: '🎨',
@@ -19,13 +19,15 @@ const emojiMap = {
   61: '🐻', 62: '🐨', 63: '🦊', 64: '🦋'
 };
 
-const BingoGrid = React.memo(({ 
-  grid, 
-  onCellClick, 
-  markedCells, 
+const BingoGrid = React.memo(({
+  grid,
+  onCellClick,
+  markedCells,
   winningLines,
   isInteractionDisabled,
-  isMyTurn
+  isMyTurn,
+  useEmojis = false, // New prop to toggle emoji display
+  lastMarkedNumber = null // New prop to highlight the last marked number
 }) => {
   const { theme } = useContext(ThemeContext);
   const gridSize = grid?.length || 5;
@@ -80,10 +82,10 @@ const BingoGrid = React.memo(({
 
     // Check if this cell is marked
     const isMarked = Array.isArray(markedCells) && markedCells.includes(index);
-    
+
     // Check if this cell is part of a winning line
     const isWinningCell = Array.isArray(winningLines) && winningLines.includes(index);
-    
+
     if (isDisabled) {
       return {
         ...baseStyle,
@@ -93,17 +95,26 @@ const BingoGrid = React.memo(({
     }
 
     if (isMarked) {
+      // Check if this is the last marked number for special highlighting
+      const isLastMarked = lastMarkedNumber !== null && flatGrid[index] === lastMarkedNumber;
+
       return {
         ...baseStyle,
-        backgroundColor: theme.colors.primary,
+        backgroundColor: isLastMarked ? theme.colors.accent : theme.colors.primary,
         color: '#FFFFFF',
         fontWeight: '800',
-        transform: 'scale(1.05)',
-        boxShadow: `0 0 0 2px ${theme.colors.primary}, 0 0 10px rgba(0,0,0,0.5)`,
+        transform: isLastMarked ? 'scale(1.08)' : 'scale(1.05)',
+        boxShadow: isLastMarked
+          ? `0 0 0 3px ${theme.colors.accent}, 0 0 15px rgba(0,0,0,0.6)`
+          : `0 0 0 2px ${theme.colors.primary}, 0 0 10px rgba(0,0,0,0.5)`,
         textShadow: '0px 1px 2px rgba(0,0,0,0.5)',
         // Add a subtle inner glow effect
         border: 'none',
-        outline: `3px solid ${theme.colors.primary}`
+        outline: isLastMarked
+          ? `3px solid ${theme.colors.accent}`
+          : `3px solid ${theme.colors.primary}`,
+        // Add animation for last marked
+        animation: isLastMarked ? 'pulse 2s infinite' : 'none'
       };
     }
 
@@ -141,12 +152,25 @@ const BingoGrid = React.memo(({
     transition: { duration: 0.2 }
   };
 
-  // Cell click handler
+  // Cell click handler with improved feedback
   const handleCellClick = (number, index) => {
     if (typeof onCellClick === 'function') {
+      // Add haptic feedback if available
+      if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(50); // Short vibration for tactile feedback
+      }
+
       // Pass the cell index first, then the number to the parent component
       onCellClick(index, number);
     }
+  };
+
+  // Helper to get cell content (number or emoji)
+  const getCellContent = (number) => {
+    if (useEmojis && emojiMap[number]) {
+      return emojiMap[number];
+    }
+    return number;
   };
 
   if (!grid || grid.length === 0) {
@@ -167,7 +191,7 @@ const BingoGrid = React.memo(({
       animate="visible"
       className="w-full max-w-2xl mx-auto"
     >
-      <div 
+      <div
         className="grid gap-2"
         style={{
           gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
@@ -191,8 +215,15 @@ const BingoGrid = React.memo(({
               data-number={number}
               data-index={index}
               aria-disabled={isDisabled}
+              aria-label={`Bingo cell ${number}`}
+              title={isMyTurn ? 'Click to mark this number' : 'Wait for your turn'}
+              className={lastMarkedNumber === number ? 'last-marked' : ''}
             >
-              {number}
+              {getCellContent(number)}
+              {/* Add a small indicator for the last marked number */}
+              {lastMarkedNumber === number && (
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-accent-500 rounded-full animate-pulse"></span>
+              )}
             </motion.button>
           );
         })}
