@@ -1073,18 +1073,28 @@ const GamePage = () => {
     }
   };
 
+  // Completely redesigned handleTurnChanged function with extreme reliability
   const handleTurnChanged = (data) => {
-    console.log('Turn changed:', data);
+    console.log('Turn changed event received:', data);
 
-    // Update current turn with the player ID
+    // STEP 1: Extract and validate the turn data
     const newCurrentTurn = data.currentTurn || data.playerId;
+    if (!newCurrentTurn) {
+      console.error('[handleTurnChanged] Invalid turn data received:', data);
+      return;
+    }
+
+    // STEP 2: Update the turn state
+    console.log(`[handleTurnChanged] Setting current turn to: ${newCurrentTurn}`);
     setCurrentTurn(newCurrentTurn);
 
-    // Check if it's my turn
+    // STEP 3: Determine if it's my turn and update state
     const isMyTurnNow = newCurrentTurn === socket.id;
+    console.log(`[handleTurnChanged] Is it my turn now? ${isMyTurnNow}`);
     setIsMyTurn(isMyTurnNow);
 
-    // Always reset the marking state when the turn changes
+    // STEP 4: Reset all UI locks and timers
+    // Reset marking state
     isMarkingRef.current = false;
     setIsMarking(false);
 
@@ -1094,19 +1104,44 @@ const GamePage = () => {
       markNumberDebounceTimerRef.current = null;
     }
 
+    // Clear any other pending timeouts
+    // (This is a safety measure to ensure no lingering timeouts)
+    if (window._gameTimeouts) {
+      window._gameTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
+      window._gameTimeouts = [];
+    } else {
+      window._gameTimeouts = [];
+    }
+
+    // STEP 5: Update the UI based on whose turn it is
     if (isMyTurnNow) {
-      console.log('It is now MY turn!');
+      console.log('[handleTurnChanged] It is now MY turn!');
       // Reset timer when it's my turn
       setTimer(15);
       setGameMessage('Your turn! Click on a number.');
+
+      // Play a sound or show a visual indicator to alert the player
+      try {
+        if (audioRef.current) {
+          audioRef.current.play().catch(e => console.log('Audio play error:', e));
+        }
+      } catch (e) {
+        console.error('[handleTurnChanged] Error playing turn sound:', e);
+      }
     } else {
+      // Find the current player
       const currentPlayer = data.player || players.find(p => p.id === newCurrentTurn);
       const playerName = currentPlayer ? currentPlayer.username : 'Unknown';
+      console.log(`[handleTurnChanged] It is now ${playerName}'s turn`);
       setGameMessage(`Waiting for ${playerName} to choose a number...`);
     }
 
-    // If players array is provided in the data, update it
-    if (data.players) {
+    // STEP 6: Update the last turn change time
+    lastTurnChangeTimeRef.current = Date.now();
+
+    // STEP 7: If players array is provided in the data, update it
+    if (data.players && Array.isArray(data.players)) {
+      console.log('[handleTurnChanged] Updating players list from turn data');
       setPlayers(data.players);
     }
   };
@@ -1268,113 +1303,122 @@ const GamePage = () => {
     });
   };
 
-  // Handle marking a number with improved reliability
+  // Completely redesigned handleMarkNumber function with extreme reliability measures
   const handleMarkNumber = useCallback((cellIndex, number) => {
-    // Clear any existing debounce timer
+    // Immediately clear any existing debounce timer
     if (markNumberDebounceTimerRef.current) {
       clearTimeout(markNumberDebounceTimerRef.current);
       markNumberDebounceTimerRef.current = null;
     }
 
-    // Set a new debounce timer
+    // Set a new debounce timer with a shorter delay
     markNumberDebounceTimerRef.current = setTimeout(() => {
-      // --- Debounced Logic Starts Here ---
-      // Only log in debug mode
-      if (DEBUG) {
-        console.log(`[handleMarkNumber] Executing with isMyTurn: ${isMyTurn}, gameStarted: ${gameStarted}, isMarking: ${isMarkingRef.current}`);
-      }
+      console.log(`[handleMarkNumber] Attempting to mark number ${number} at index ${cellIndex}`);
 
-      // Perform the checks *inside* the debounced function
+      // STEP 1: Perform all client-side validation checks
+      // Check if it's my turn
       if (!isMyTurn) {
+        console.warn("[handleMarkNumber] Not your turn - requesting game state sync");
         toast.error("It's not your turn");
-        // Request game state to ensure we're in sync
-        requestGameState();
+        requestGameState(); // Always sync when turn state might be wrong
         return;
       }
 
+      // Check if game has started
       if (!gameStarted) {
         toast.error("Game hasn't started yet");
         return;
       }
 
+      // Check if we're already processing a mark
       if (isMarkingRef.current) {
         toast.error("Please wait for the previous action to complete");
         return;
       }
 
-      // Check if the cell is already marked
+      // Check if the cell is already marked locally
       if (markedCells.includes(cellIndex)) {
         toast.error("This number is already marked");
         return;
       }
 
-      // Double-check with the server if it's actually our turn
-      // This helps prevent the "Not your turn" errors
-      try {
-        socket.emit('check-turn', { roomCode }, (response) => {
-          if (response && response.isYourTurn === false) {
-            console.log('[handleMarkNumber] Server says it\'s not our turn, but client thinks it is. Syncing state...');
-            toast.error("Turn out of sync. Syncing with server...");
-            requestGameState();
-            return;
-          }
-        });
-      } catch (e) {
-        console.error('[handleMarkNumber] Error checking turn with server:', e);
-      }
-
-      // Set marking state BEFORE emitting to prevent multiple clicks
+      // STEP 2: Set marking state to prevent multiple clicks
       isMarkingRef.current = true;
       setIsMarking(true);
 
-      // Add a safety timeout to release the lock if the server doesn't respond
-      const safetyTimeout = setTimeout(() => {
-        if (isMarkingRef.current) {
-          console.log('[handleMarkNumber] Safety timeout releasing lock');
+      // STEP 3: Mark the cell locally IMMEDIATELY for responsive UI
+      console.log('[handleMarkNumber] Marking cell locally for immediate feedback');
+
+      // Update marked cells locally
+      setMarkedCells(prev => {
+        if (!prev.includes(cellIndex)) {
+          return [...prev, cellIndex];
+        }
+        return prev;
+      });
+
+      // Update marked history
+      setMarkedHistory(prev => {
+        if (!prev.includes(number)) {
+          return [...prev, number];
+        }
+        return prev;
+      });
+
+      // Set last marked number for highlighting
+      setLastMarkedNumber(number);
+
+      // Process the marked number locally
+      processMarkedNumbers([number], grid);
+
+      // STEP 4: Set up multiple safety mechanisms
+
+      // Track server response
+      let serverResponseReceived = false;
+
+      // Safety timeout 1: Quick check for server response
+      const quickCheckTimeout = setTimeout(() => {
+        if (!serverResponseReceived) {
+          console.warn('[handleMarkNumber] No server response yet after 1 second');
+        }
+      }, 1000);
+
+      // Safety timeout 2: Medium timeout to check connection
+      const mediumTimeout = setTimeout(() => {
+        if (!serverResponseReceived) {
+          console.warn('[handleMarkNumber] No server response after 2 seconds, checking connection');
+
+          // Check if socket is connected
+          if (!socket.connected) {
+            console.error('[handleMarkNumber] Socket disconnected, attempting to reconnect');
+            try {
+              socket.connect();
+            } catch (e) {
+              console.error('[handleMarkNumber] Error reconnecting:', e);
+            }
+          }
+        }
+      }, 2000);
+
+      // Safety timeout 3: Final timeout to force turn change
+      const finalTimeout = setTimeout(() => {
+        if (!serverResponseReceived && isMarkingRef.current) {
+          console.error('[handleMarkNumber] No server response after 3 seconds, forcing turn change');
+
+          // Release the marking lock
           isMarkingRef.current = false;
           setIsMarking(false);
 
           // Show a message to the user
-          toast.error('The server took too long to respond. Continuing game locally.');
+          toast.error('The server is not responding. Continuing game locally.');
 
-          // Force mark the cell locally to keep the game moving
-          console.log('[handleMarkNumber] Forcing local mark for cell:', { cellIndex, number });
-
-          // Update marked cells locally
-          setMarkedCells(prev => {
-            if (!prev.includes(cellIndex)) {
-              return [...prev, cellIndex];
-            }
-            return prev;
-          });
-
-          // Update marked history
-          setMarkedHistory(prev => {
-            if (!prev.includes(number)) {
-              return [...prev, number];
-            }
-            return prev;
-          });
-
-          // Set last marked number for highlighting
-          setLastMarkedNumber(number);
-
-          // Clear the last marked number highlight after 5 seconds
-          setTimeout(() => {
-            setLastMarkedNumber(null);
-          }, 5000);
-
-          // Process the marked number locally
-          processMarkedNumbers([number], grid);
-
-          // Force turn change after local marking
+          // Force turn change
           if (isMyTurn) {
             console.log('[handleMarkNumber] Forcing turn change after local mark');
             forceNextTurn();
 
-            // Try to notify other players by emitting the event directly
+            // Try to notify other players
             try {
-              // Emit number-marked event directly to simulate server response
               socket.emit('number-marked-local', {
                 roomCode,
                 number,
@@ -1386,85 +1430,171 @@ const GamePage = () => {
             }
           }
         }
-      }, 1500); // Reduced to 1.5 seconds for faster recovery
+      }, 3000);
 
-      // Emit mark-number event to the server
-      console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number });
-
-      // Track if we've received a response
-      let responseReceived = false;
+      // STEP 5: Send the mark to the server
+      console.log(`[handleMarkNumber] Sending mark to server: ${number}`);
 
       try {
-        // Add a callback to handle the response - ONLY send roomCode and number as server expects
+        // Send only what the server expects: roomCode and number
         socket.emit('mark-number', {
           roomCode,
           number
         }, (response) => {
-          responseReceived = true;
+          // Clear all safety timeouts
+          clearTimeout(quickCheckTimeout);
+          clearTimeout(mediumTimeout);
+          clearTimeout(finalTimeout);
 
-          // Handle the response from the server
+          // Mark that we received a response
+          serverResponseReceived = true;
+
+          // Handle the response
           if (response && response.error) {
             console.error(`[handleMarkNumber] Server returned error:`, response.error);
             toast.error(response.error);
-          } else if (response && response.success) {
-            console.log(`[handleMarkNumber] Server confirmed mark:`, response);
+
+            // If the server says it's not our turn, sync the game state
+            if (response.error.includes('Not your turn')) {
+              console.warn('[handleMarkNumber] Server says it\'s not our turn, syncing state');
+              setIsMyTurn(false);
+              requestGameState();
+            }
+          } else {
+            console.log(`[handleMarkNumber] Server confirmed mark:`, response || 'No response data');
           }
 
-          // Release the marking lock
+          // Always release the marking lock
           isMarkingRef.current = false;
           setIsMarking(false);
         });
       } catch (error) {
-        console.error('[handleMarkNumber] Error emitting mark-number event:', error);
-        toast.error('Error sending move to server');
+        console.error('[handleMarkNumber] Error sending mark to server:', error);
+        toast.error('Error communicating with server');
 
-        // Release the marking lock
-        isMarkingRef.current = false;
-        setIsMarking(false);
+        // Don't release the lock yet - let the safety timeouts handle it
       }
+    }, 100); // Reduced debounce to 100ms for faster response
+  }, [isMyTurn, gameStarted, markedCells, roomCode, grid, forceNextTurn, requestGameState, processMarkedNumbers, socket.id]);
 
-      // Add a shorter timeout to check if we've received a response
-      setTimeout(() => {
-        if (!responseReceived && isMarkingRef.current) {
-          console.log('[handleMarkNumber] No response received yet, checking socket connection...');
+  // Add enhanced connection status indicator to UI
+  const [connectionStatus, setConnectionStatus] = useState({
+    connected: socketConnected,
+    lastPing: Date.now(),
+    lastPong: Date.now(),
+    pingCount: 0,
+    pongCount: 0
+  });
 
-          // Check if socket is still connected
-          if (!socket.connected) {
-            console.error('[handleMarkNumber] Socket disconnected, attempting to reconnect...');
-            socket.connect();
+  // Update connection status when socket connects/disconnects
+  useEffect(() => {
+    const handleConnect = () => {
+      console.log('[ConnectionStatus] Socket connected');
+      setConnectionStatus(prev => ({
+        ...prev,
+        connected: true,
+        lastPing: Date.now()
+      }));
+      setSocketConnected(true);
+    };
 
-            // Release the marking lock
-            isMarkingRef.current = false;
-            setIsMarking(false);
+    const handleDisconnect = () => {
+      console.log('[ConnectionStatus] Socket disconnected');
+      setConnectionStatus(prev => ({
+        ...prev,
+        connected: false
+      }));
+      setSocketConnected(false);
+    };
 
-            toast.error('Lost connection to the server. Attempting to reconnect...');
-          }
-        }
-      }, 1500); // Check after 1.5 seconds
+    const handlePong = () => {
+      setConnectionStatus(prev => ({
+        ...prev,
+        lastPong: Date.now(),
+        pongCount: prev.pongCount + 1
+      }));
+    };
 
-      // Resetting isMarking is handled by handleNumberMarked or handleError
-      // --- Debounced Logic Ends Here ---
-    }, 300); // Debounce timeout of 300ms
+    // Set up listeners
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('pong', handlePong);
 
-  // Dependencies for the outer useCallback wrapper
-  // Include markedCells to ensure we have the latest state when checking if a cell is already marked
-  }, [isMyTurn, gameStarted, roomCode, markedCells]);
+    // Send regular pings to check connection
+    const pingInterval = setInterval(() => {
+      if (socket.connected) {
+        socket.emit('ping');
+        setConnectionStatus(prev => ({
+          ...prev,
+          lastPing: Date.now(),
+          pingCount: prev.pingCount + 1
+        }));
+      }
+    }, 5000);
 
-  // Add connection status indicator to UI
-  const ConnectionStatus = () => (
-    <div className="fixed bottom-4 right-4 z-50">
-      <div
-        className={`px-3 py-1 rounded-full text-sm font-medium flex items-center ${
-          socketConnected ? 'bg-green-500' : 'bg-red-500'
-        } text-white`}
-      >
-        <span className={`w-2 h-2 rounded-full mr-2 ${
-          socketConnected ? 'bg-green-200' : 'bg-red-200'
-        }`}></span>
-        {socketConnected ? 'Connected' : 'Disconnected'}
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('pong', handlePong);
+      clearInterval(pingInterval);
+    };
+  }, []);
+
+  // Calculate connection health
+  const getConnectionHealth = () => {
+    const now = Date.now();
+    const timeSinceLastPong = now - connectionStatus.lastPong;
+
+    if (!connectionStatus.connected) return 'disconnected';
+    if (timeSinceLastPong > 15000) return 'poor';
+    if (timeSinceLastPong > 5000) return 'fair';
+    return 'good';
+  };
+
+  const ConnectionStatus = () => {
+    const health = getConnectionHealth();
+
+    return (
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
+        {health === 'good' && (
+          <div className="bg-green-500 text-white px-3 py-1 rounded-full text-sm flex items-center">
+            <span className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></span>
+            Connected
+          </div>
+        )}
+        {health === 'fair' && (
+          <div className="bg-yellow-500 text-white px-3 py-1 rounded-full text-sm flex items-center">
+            <span className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></span>
+            Slow Connection
+          </div>
+        )}
+        {health === 'poor' && (
+          <div className="bg-orange-500 text-white px-3 py-1 rounded-full text-sm flex items-center">
+            <span className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></span>
+            Poor Connection
+            <button
+              onClick={requestGameState}
+              className="ml-2 bg-white text-orange-500 rounded-full px-2 text-xs"
+            >
+              Sync
+            </button>
+          </div>
+        )}
+        {health === 'disconnected' && (
+          <div className="bg-red-500 text-white px-3 py-1 rounded-full text-sm flex items-center">
+            <span className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></span>
+            Disconnected
+            <button
+              onClick={() => socket.connect()}
+              className="ml-2 bg-white text-red-500 rounded-full px-2 text-xs"
+            >
+              Reconnect
+            </button>
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   // Effect for Socket Listeners
   useEffect(() => {
