@@ -168,14 +168,50 @@ const GamePage = () => {
       }
     };
 
-    // Check connection every 10 seconds
-    const socketCheckInterval = setInterval(checkSocketConnection, 10000);
+    // Function to check game state and recover if needed
+    const checkGameState = () => {
+      // Check if it's been too long since the last turn change
+      const now = Date.now();
+      const lastTurnTime = lastTurnChangeTimeRef.current || now;
+
+      // If it's been more than 20 seconds since the last turn change and it's my turn
+      if (now - lastTurnTime > 20000 && isMyTurn && isMarkingRef.current) {
+        console.warn('[Game State Check] Game appears to be stuck. Forcing recovery...');
+
+        // Force release any locks
+        isMarkingRef.current = false;
+        setIsMarking(false);
+
+        // Show a message to the user
+        toast.error('Game appears to be stuck. Recovering...');
+
+        // Request a fresh game state from the server
+        socket.emit('request-game-state', { roomCode });
+      }
+    };
+
+    // Check connection every 8 seconds
+    const socketCheckInterval = setInterval(checkSocketConnection, 8000);
+
+    // Check game state every 10 seconds
+    const gameStateCheckInterval = setInterval(checkGameState, 10000);
 
     // Initial check
     checkSocketConnection();
 
-    return () => clearInterval(socketCheckInterval);
-  }, [gameStarted]);
+    return () => {
+      clearInterval(socketCheckInterval);
+      clearInterval(gameStateCheckInterval);
+    };
+  }, [gameStarted, isMyTurn, roomCode]);
+
+  // Track the last turn change time
+  const lastTurnChangeTimeRef = useRef(Date.now());
+
+  // Update the last turn change time whenever the turn changes
+  useEffect(() => {
+    lastTurnChangeTimeRef.current = Date.now();
+  }, [currentTurn]);
 
   // Join game on mount
   useEffect(() => {
@@ -1140,8 +1176,42 @@ const GamePage = () => {
 
           // Show a message to the user
           toast.error('The server took too long to respond. Please try again.');
+
+          // Force mark the cell locally to keep the game moving
+          console.log('[handleMarkNumber] Forcing local mark for cell:', { cellIndex, number });
+
+          // Update marked cells locally
+          setMarkedCells(prev => {
+            if (!prev.includes(cellIndex)) {
+              return [...prev, cellIndex];
+            }
+            return prev;
+          });
+
+          // Update marked history
+          setMarkedHistory(prev => {
+            if (!prev.includes(number)) {
+              return [...prev, number];
+            }
+            return prev;
+          });
+
+          // Set last marked number for highlighting
+          setLastMarkedNumber(number);
+
+          // Clear the last marked number highlight after 5 seconds
+          setTimeout(() => {
+            setLastMarkedNumber(null);
+          }, 5000);
+
+          // Force turn change after local marking
+          if (isMyTurn) {
+            console.log('[handleMarkNumber] Forcing turn change after local mark');
+            setIsMyTurn(false);
+            setGameMessage('Waiting for other player to choose a number...');
+          }
         }
-      }, 3000); // 3 second safety timeout
+      }, 2000); // Reduced to 2 seconds for faster recovery
 
       // Emit mark-number event to the server
       console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });

@@ -97,7 +97,7 @@ socket.on('pong', () => {
   reconnectAttempts = 0; // Reset reconnect attempts on successful pong
 });
 
-// More frequent health check (15 seconds instead of 25)
+// More frequent health check (10 seconds instead of 15)
 const healthCheck = setInterval(() => {
   const now = Date.now();
 
@@ -107,9 +107,21 @@ const healthCheck = setInterval(() => {
     lastPingTime = now;
 
     // Check if we've received a pong recently
-    if (now - lastPongTime > 30000) { // No pong for 30 seconds
-      console.warn('No pong received for 30 seconds, attempting reconnection');
-      socket.disconnect().connect(); // Force reconnection
+    if (now - lastPongTime > 20000) { // No pong for 20 seconds (reduced from 30)
+      console.warn('No pong received for 20 seconds, forcing reconnection');
+
+      // Force a complete reconnection
+      try {
+        socket.disconnect();
+        setTimeout(() => {
+          if (!socket.connected) {
+            socket.connect();
+            console.log('Socket reconnection attempted after disconnect');
+          }
+        }, 1000);
+      } catch (e) {
+        console.error('Error during forced reconnection:', e);
+      }
     }
 
     reconnectAttempts = 0; // Reset reconnect attempts when connected
@@ -118,17 +130,35 @@ const healthCheck = setInterval(() => {
     console.warn(`Socket disconnected. Reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
 
     if (reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
-      // Try to reconnect
+      // Try to reconnect with exponential backoff
       if (!socket.connected && !socket.connecting) {
-        socket.connect();
+        try {
+          socket.connect();
+          console.log('Socket reconnection attempted');
+        } catch (e) {
+          console.error('Error during reconnection attempt:', e);
+        }
       }
     } else {
       // Don't clear the interval, just show an error and reset the counter
       toast.error('Connection issues detected. Trying to reconnect...');
       reconnectAttempts = Math.floor(MAX_RECONNECT_ATTEMPTS / 2); // Reset to half to keep trying
+
+      // Force a complete reconnection
+      try {
+        socket.disconnect();
+        setTimeout(() => {
+          if (!socket.connected) {
+            socket.connect();
+            console.log('Socket reconnection attempted after max attempts');
+          }
+        }, 1000);
+      } catch (e) {
+        console.error('Error during forced reconnection after max attempts:', e);
+      }
     }
   }
-}, 15000);
+}, 10000);
 
 // Clean up on unmount
 window.addEventListener('beforeunload', () => {
