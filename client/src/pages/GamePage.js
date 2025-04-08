@@ -1478,7 +1478,7 @@ const GamePage = () => {
   }, [isMyTurn, gameStarted, markedCells, roomCode, grid, forceNextTurn, requestGameState, processMarkedNumbers, socket.id]);
 
   // Add enhanced connection status indicator to UI
-  const [connectionStatus, setConnectionStatus] = useState({
+  const [connectionHealth, setConnectionHealth] = useState({
     connected: socketConnected,
     lastPing: Date.now(),
     lastPong: Date.now(),
@@ -1490,7 +1490,7 @@ const GamePage = () => {
   useEffect(() => {
     const handleConnect = () => {
       console.log('[ConnectionStatus] Socket connected');
-      setConnectionStatus(prev => ({
+      setConnectionHealth(prev => ({
         ...prev,
         connected: true,
         lastPing: Date.now()
@@ -1500,7 +1500,7 @@ const GamePage = () => {
 
     const handleDisconnect = () => {
       console.log('[ConnectionStatus] Socket disconnected');
-      setConnectionStatus(prev => ({
+      setConnectionHealth(prev => ({
         ...prev,
         connected: false
       }));
@@ -1508,7 +1508,7 @@ const GamePage = () => {
     };
 
     const handlePong = () => {
-      setConnectionStatus(prev => ({
+      setConnectionHealth(prev => ({
         ...prev,
         lastPong: Date.now(),
         pongCount: prev.pongCount + 1
@@ -1524,7 +1524,7 @@ const GamePage = () => {
     const pingInterval = setInterval(() => {
       if (socket.connected) {
         socket.emit('ping');
-        setConnectionStatus(prev => ({
+        setConnectionHealth(prev => ({
           ...prev,
           lastPing: Date.now(),
           pingCount: prev.pingCount + 1
@@ -1543,9 +1543,9 @@ const GamePage = () => {
   // Calculate connection health
   const getConnectionHealth = () => {
     const now = Date.now();
-    const timeSinceLastPong = now - connectionStatus.lastPong;
+    const timeSinceLastPong = now - connectionHealth.lastPong;
 
-    if (!connectionStatus.connected) return 'disconnected';
+    if (!connectionHealth.connected) return 'disconnected';
     if (timeSinceLastPong > 15000) return 'poor';
     if (timeSinceLastPong > 5000) return 'fair';
     return 'good';
