@@ -124,6 +124,23 @@ const GamePage = () => {
     console.log(`[Effect] isMarking state changed to: ${isMarking}. Ref updated.`);
   }, [isMarking]);
 
+  // Add a periodic check to ensure isMarking doesn't get stuck
+  useEffect(() => {
+    // Only run this effect if the game has started
+    if (!gameStarted) return;
+
+    const markingCheckInterval = setInterval(() => {
+      // If isMarking has been true for more than 5 seconds, reset it
+      if (isMarkingRef.current) {
+        console.log('[Marking Check] isMarking has been true for too long. Resetting...');
+        isMarkingRef.current = false;
+        setIsMarking(false);
+      }
+    }, 5000); // Check every 5 seconds
+
+    return () => clearInterval(markingCheckInterval);
+  }, [gameStarted]);
+
   // Join game on mount
   useEffect(() => {
     if (!username) {
@@ -867,6 +884,16 @@ const GamePage = () => {
     const isMyTurnNow = newCurrentTurn === socket.id;
     setIsMyTurn(isMyTurnNow);
 
+    // Always reset the marking state when the turn changes
+    isMarkingRef.current = false;
+    setIsMarking(false);
+
+    // Clear any pending debounce timers
+    if (markNumberDebounceTimerRef.current) {
+      clearTimeout(markNumberDebounceTimerRef.current);
+      markNumberDebounceTimerRef.current = null;
+    }
+
     if (isMyTurnNow) {
       console.log('It is now MY turn!');
       // Reset timer when it's my turn
@@ -1071,13 +1098,14 @@ const GamePage = () => {
       // Add a safety timeout to release the lock if the server doesn't respond
       const safetyTimeout = setTimeout(() => {
         if (isMarkingRef.current) {
-          if (DEBUG) {
-            console.log('[handleMarkNumber] Safety timeout releasing lock');
-          }
+          console.log('[handleMarkNumber] Safety timeout releasing lock');
           isMarkingRef.current = false;
           setIsMarking(false);
+
+          // Show a message to the user
+          toast.error('The server took too long to respond. Please try again.');
         }
-      }, 5000); // 5 second safety timeout
+      }, 3000); // 3 second safety timeout
 
       // Emit mark-number event to the server
       console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
