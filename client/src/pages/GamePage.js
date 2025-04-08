@@ -141,6 +141,64 @@ const GamePage = () => {
     return () => clearInterval(markingCheckInterval);
   }, [gameStarted]);
 
+  // Track the last turn change time
+  const lastTurnChangeTimeRef = useRef(Date.now());
+
+  // Update the last turn change time whenever the turn changes
+  useEffect(() => {
+    lastTurnChangeTimeRef.current = Date.now();
+  }, [currentTurn]);
+
+  // Function to manually force a turn change (for recovery)
+  const forceNextTurn = useCallback(() => {
+    console.log('[forceNextTurn] Manually forcing turn change');
+
+    // Find the next player
+    if (players.length < 2) {
+      console.warn('[forceNextTurn] Not enough players to force turn change');
+      return;
+    }
+
+    // Find the current player index
+    const currentPlayerIndex = players.findIndex(p => p.id === currentTurn);
+    if (currentPlayerIndex === -1) {
+      console.warn('[forceNextTurn] Current player not found in players list');
+      return;
+    }
+
+    // Calculate the next player index
+    const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+    const nextPlayer = players[nextPlayerIndex];
+
+    if (!nextPlayer) {
+      console.warn('[forceNextTurn] Next player not found');
+      return;
+    }
+
+    console.log(`[forceNextTurn] Changing turn from ${players[currentPlayerIndex]?.username} to ${nextPlayer.username}`);
+
+    // Update the turn state locally
+    setCurrentTurn(nextPlayer.id);
+    setIsMyTurn(nextPlayer.id === socket.id);
+
+    // Update game message
+    if (nextPlayer.id === socket.id) {
+      setGameMessage('Your turn! Click on a number.');
+    } else {
+      setGameMessage(`Waiting for ${nextPlayer.username} to choose a number...`);
+    }
+
+    // Reset any locks
+    isMarkingRef.current = false;
+    setIsMarking(false);
+
+    // Update the last turn change time
+    lastTurnChangeTimeRef.current = Date.now();
+
+    // Show a message to the user
+    toast('Turn changed manually due to connection issues', { icon: '🔄' });
+  }, [currentTurn, players, socket.id]);
+
   // Add a periodic check for socket connection health
   useEffect(() => {
     // Only run this effect if the game has started
@@ -212,64 +270,6 @@ const GamePage = () => {
       clearInterval(gameStateCheckInterval);
     };
   }, [gameStarted, isMyTurn, roomCode, forceNextTurn]);
-
-  // Track the last turn change time
-  const lastTurnChangeTimeRef = useRef(Date.now());
-
-  // Update the last turn change time whenever the turn changes
-  useEffect(() => {
-    lastTurnChangeTimeRef.current = Date.now();
-  }, [currentTurn]);
-
-  // Function to manually force a turn change (for recovery)
-  const forceNextTurn = useCallback(() => {
-    console.log('[forceNextTurn] Manually forcing turn change');
-
-    // Find the next player
-    if (players.length < 2) {
-      console.warn('[forceNextTurn] Not enough players to force turn change');
-      return;
-    }
-
-    // Find the current player index
-    const currentPlayerIndex = players.findIndex(p => p.id === currentTurn);
-    if (currentPlayerIndex === -1) {
-      console.warn('[forceNextTurn] Current player not found in players list');
-      return;
-    }
-
-    // Calculate the next player index
-    const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
-    const nextPlayer = players[nextPlayerIndex];
-
-    if (!nextPlayer) {
-      console.warn('[forceNextTurn] Next player not found');
-      return;
-    }
-
-    console.log(`[forceNextTurn] Changing turn from ${players[currentPlayerIndex]?.username} to ${nextPlayer.username}`);
-
-    // Update the turn state locally
-    setCurrentTurn(nextPlayer.id);
-    setIsMyTurn(nextPlayer.id === socket.id);
-
-    // Update game message
-    if (nextPlayer.id === socket.id) {
-      setGameMessage('Your turn! Click on a number.');
-    } else {
-      setGameMessage(`Waiting for ${nextPlayer.username} to choose a number...`);
-    }
-
-    // Reset any locks
-    isMarkingRef.current = false;
-    setIsMarking(false);
-
-    // Update the last turn change time
-    lastTurnChangeTimeRef.current = Date.now();
-
-    // Show a message to the user
-    toast('Turn changed manually due to connection issues', { icon: '🔄' });
-  }, [currentTurn, players, socket.id]);
 
   // Join game on mount
   useEffect(() => {
