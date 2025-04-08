@@ -480,14 +480,25 @@ const GamePage = () => {
     const newHistoryNumbers = [];
 
     numbers.forEach(number => {
+        // Always log the number being processed
+        console.log(`[processMarkedNumbers] Processing number ${number}`);
+
         // Check if number is already processed in current history (important for sync)
         if (markedHistory.includes(number)) {
-            console.log(`[processMarkedNumbers] Number ${number} is already in markedHistory. Skipping.`);
+            console.log(`[processMarkedNumbers] Number ${number} is already in markedHistory. Checking if it's marked in cells.`);
+
+            // Even if it's in history, make sure it's also marked in the cells
+            const cellIndex = flatGrid.findIndex(cellValue => cellValue === number);
+            if (cellIndex !== -1 && !markedCells.includes(cellIndex)) {
+                console.log(`[processMarkedNumbers] Number ${number} is in history but not marked in cells. Adding index ${cellIndex}.`);
+                newMarkedIndices.push(cellIndex);
+            }
             return;
         }
 
         const cellIndex = flatGrid.findIndex(cellValue => cellValue === number);
         if (cellIndex !== -1) {
+            console.log(`[processMarkedNumbers] Found number ${number} at index ${cellIndex}. Adding to marked indices.`);
             newMarkedIndices.push(cellIndex);
             newHistoryNumbers.push(number); // Add to history only if found in grid
         } else {
@@ -536,10 +547,10 @@ const GamePage = () => {
     const markedBy = data.markedBy;
     const automatic = data.automatic;
 
-    // Only log in debug mode
-    if (DEBUG) {
-      console.log(`[handleNumberMarked] Received event. Number: ${number}, MarkedBy: ${markedBy}, Automatic: ${automatic}. Grid ready: ${isGridReadyRef.current}`);
-    }
+    // Always log this event for debugging
+    console.log(`[handleNumberMarked] Received event:`, data);
+    console.log(`[handleNumberMarked] Number: ${number}, MarkedBy: ${markedBy}, Automatic: ${automatic}. Grid ready: ${isGridReadyRef.current}`);
+    console.log(`[handleNumberMarked] Current markedCells:`, markedCells);
 
     // Set last marked number for highlighting
     if (number) {
@@ -1055,14 +1066,25 @@ const GamePage = () => {
       }, 5000); // 5 second safety timeout
 
       // Emit mark-number event to the server
-      if (DEBUG) {
-        console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
-      }
+      console.log(`[handleMarkNumber] Emitting 'mark-number' to server:`, { roomCode, number, cellIndex });
 
+      // Add a callback to handle the response
       socket.emit('mark-number', {
         roomCode,
         number,
         cellIndex
+      }, (response) => {
+        // Handle the response from the server
+        if (response && response.error) {
+          console.error(`[handleMarkNumber] Server returned error:`, response.error);
+          toast.error(response.error);
+        } else if (response && response.success) {
+          console.log(`[handleMarkNumber] Server confirmed mark:`, response);
+        }
+
+        // Release the marking lock
+        isMarkingRef.current = false;
+        setIsMarking(false);
       });
 
       // Resetting isMarking is handled by handleNumberMarked or handleError
