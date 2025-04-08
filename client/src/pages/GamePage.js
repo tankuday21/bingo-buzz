@@ -507,9 +507,8 @@ const GamePage = () => {
     });
 
     if (newMarkedIndices.length > 0) {
-        if (DEBUG) {
-            console.log('[processMarkedNumbers] Updating markedCells state with indices:', newMarkedIndices);
-        }
+        // Always log for debugging
+        console.log('[processMarkedNumbers] Updating markedCells state with indices:', newMarkedIndices);
 
         // Use functional update for markedCells with a more reliable approach
         setMarkedCells(prev => {
@@ -522,6 +521,9 @@ const GamePage = () => {
                     updatedMarkedCells.push(index);
                 }
             });
+
+            // Log the updated cells
+            console.log('[processMarkedNumbers] Updated markedCells:', updatedMarkedCells);
 
             return updatedMarkedCells;
         });
@@ -536,6 +538,15 @@ const GamePage = () => {
             });
             return updatedHistory;
         });
+
+        // Force a re-render to ensure the UI updates
+        setTimeout(() => {
+            // This will trigger a re-render
+            setIsMarking(prev => !prev);
+            setTimeout(() => {
+                setIsMarking(prev => !prev);
+            }, 50);
+        }, 100);
     }
   };
 
@@ -556,11 +567,14 @@ const GamePage = () => {
     if (number) {
       setLastMarkedNumber(number);
 
-      // Clear the last marked number highlight after 3 seconds
+      // Clear the last marked number highlight after 5 seconds
       setTimeout(() => {
         setLastMarkedNumber(null);
-      }, 3000);
+      }, 5000);
     }
+
+    // Force a re-render to ensure the UI updates
+    setIsMarking(false);
 
     // Update marked cells if provided directly
     if (data.markedCells) {

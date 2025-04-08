@@ -98,6 +98,7 @@ const BingoGrid = React.memo(({
       // Check if this is the last marked number for special highlighting
       const isLastMarked = lastMarkedNumber !== null && flatGrid[index] === lastMarkedNumber;
 
+      // Create a more prominent style for marked cells that will persist
       return {
         ...baseStyle,
         backgroundColor: isLastMarked ? theme.colors.accent : theme.colors.primary,
@@ -114,7 +115,11 @@ const BingoGrid = React.memo(({
           ? `3px solid ${theme.colors.accent}`
           : `3px solid ${theme.colors.primary}`,
         // Add animation for last marked
-        animation: isLastMarked ? 'pulse 2s infinite' : 'none'
+        animation: isLastMarked ? 'pulse 2s infinite' : 'none',
+        // Add important flag to ensure styles are not overridden
+        '!important': true,
+        // Add transition for smoother visual changes
+        transition: 'all 0.3s ease-in-out'
       };
     }
 
@@ -217,7 +222,7 @@ const BingoGrid = React.memo(({
               aria-disabled={isDisabled}
               aria-label={`Bingo cell ${number}`}
               title={isMyTurn ? 'Click to mark this number' : 'Wait for your turn'}
-              className={lastMarkedNumber === number ? 'last-marked' : ''}
+              className={`bingo-cell ${markedCells.includes(index) ? 'bingo-cell-marked' : ''} ${lastMarkedNumber === number ? 'bingo-cell-last-marked' : ''}`}
             >
               {getCellContent(number)}
               {/* Add a small indicator for the last marked number */}
