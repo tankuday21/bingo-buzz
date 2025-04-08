@@ -174,8 +174,8 @@ const GamePage = () => {
       const now = Date.now();
       const lastTurnTime = lastTurnChangeTimeRef.current || now;
 
-      // If it's been more than 20 seconds since the last turn change and it's my turn
-      if (now - lastTurnTime > 20000 && isMyTurn && isMarkingRef.current) {
+      // If it's been more than 15 seconds since the last turn change and it's my turn
+      if (now - lastTurnTime > 15000 && isMyTurn && isMarkingRef.current) {
         console.warn('[Game State Check] Game appears to be stuck. Forcing recovery...');
 
         // Force release any locks
@@ -187,6 +187,14 @@ const GamePage = () => {
 
         // Request a fresh game state from the server
         socket.emit('request-game-state', { roomCode });
+      }
+
+      // If it's been more than 30 seconds since the last turn change (regardless of whose turn it is)
+      if (now - lastTurnTime > 30000) {
+        console.warn('[Game State Check] Game has been stuck for too long. Forcing turn change...');
+
+        // Force a turn change
+        forceNextTurn();
       }
     };
 
@@ -203,7 +211,7 @@ const GamePage = () => {
       clearInterval(socketCheckInterval);
       clearInterval(gameStateCheckInterval);
     };
-  }, [gameStarted, isMyTurn, roomCode]);
+  }, [gameStarted, isMyTurn, roomCode, forceNextTurn]);
 
   // Track the last turn change time
   const lastTurnChangeTimeRef = useRef(Date.now());
@@ -212,6 +220,56 @@ const GamePage = () => {
   useEffect(() => {
     lastTurnChangeTimeRef.current = Date.now();
   }, [currentTurn]);
+
+  // Function to manually force a turn change (for recovery)
+  const forceNextTurn = useCallback(() => {
+    console.log('[forceNextTurn] Manually forcing turn change');
+
+    // Find the next player
+    if (players.length < 2) {
+      console.warn('[forceNextTurn] Not enough players to force turn change');
+      return;
+    }
+
+    // Find the current player index
+    const currentPlayerIndex = players.findIndex(p => p.id === currentTurn);
+    if (currentPlayerIndex === -1) {
+      console.warn('[forceNextTurn] Current player not found in players list');
+      return;
+    }
+
+    // Calculate the next player index
+    const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+    const nextPlayer = players[nextPlayerIndex];
+
+    if (!nextPlayer) {
+      console.warn('[forceNextTurn] Next player not found');
+      return;
+    }
+
+    console.log(`[forceNextTurn] Changing turn from ${players[currentPlayerIndex]?.username} to ${nextPlayer.username}`);
+
+    // Update the turn state locally
+    setCurrentTurn(nextPlayer.id);
+    setIsMyTurn(nextPlayer.id === socket.id);
+
+    // Update game message
+    if (nextPlayer.id === socket.id) {
+      setGameMessage('Your turn! Click on a number.');
+    } else {
+      setGameMessage(`Waiting for ${nextPlayer.username} to choose a number...`);
+    }
+
+    // Reset any locks
+    isMarkingRef.current = false;
+    setIsMarking(false);
+
+    // Update the last turn change time
+    lastTurnChangeTimeRef.current = Date.now();
+
+    // Show a message to the user
+    toast('Turn changed manually due to connection issues', { icon: '🔄' });
+  }, [currentTurn, players, socket.id]);
 
   // Join game on mount
   useEffect(() => {
@@ -1207,8 +1265,7 @@ const GamePage = () => {
           // Force turn change after local marking
           if (isMyTurn) {
             console.log('[handleMarkNumber] Forcing turn change after local mark');
-            setIsMyTurn(false);
-            setGameMessage('Waiting for other player to choose a number...');
+            forceNextTurn();
           }
         }
       }, 2000); // Reduced to 2 seconds for faster recovery
@@ -1499,6 +1556,21 @@ const GamePage = () => {
             </button>
 
             <ThemeSwitcher className="ml-2" />
+
+            {/* Emergency turn change button - only show during game */}
+            {gameStarted && (
+              <button
+                onClick={forceNextTurn}
+                className="ml-2 px-3 py-1 rounded-md text-sm font-medium transition-colors duration-200"
+                style={{
+                  backgroundColor: theme.colors.error,
+                  color: '#ffffff'
+                }}
+                title="Use only if the game is stuck"
+              >
+                Emergency Turn Change
+              </button>
+            )}
           </div>
         </motion.header>
 
