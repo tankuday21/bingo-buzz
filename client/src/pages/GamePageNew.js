@@ -89,7 +89,8 @@ const GamePageContent = ({ roomCode, username }) => {
     markNumber,
     forceTurnChange,
     enableOfflineMode,
-    requestGameState
+    requestGameState,
+    forceStartGame
   } = useGameEngine();
 
   // Local state
@@ -447,6 +448,21 @@ const GamePageContent = ({ roomCode, username }) => {
                 title="Switch to offline mode"
               >
                 Go Offline
+              </button>
+            )}
+
+            {/* Force Start Game button */}
+            {!gameStarted && (
+              <button
+                onClick={forceStartGame}
+                className="ml-2 px-3 py-1 rounded-md text-sm font-medium transition-colors duration-200"
+                style={{
+                  backgroundColor: '#8b5cf6', // Purple
+                  color: '#ffffff'
+                }}
+                title="Force start game in offline mode"
+              >
+                Force Start Game
               </button>
             )}
           </div>
